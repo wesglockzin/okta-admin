@@ -2,6 +2,20 @@
 
 A local Flask web UI for managing Okta SAML and OIDC applications across DEV / STG / PROD environments — without touching the Okta Admin Console.
 
+---
+
+### About this repo
+
+This is a sanitized snapshot of internal tooling, published via an
+automated review-and-publish pipeline. Internal identifiers
+(subscription IDs, resource group names, internal hostnames, email
+addresses) are deliberately replaced with placeholders like
+`your-subscription-id`, `your-acr-name`, and `your-org`. Replace
+these with values appropriate to your environment when adapting
+the code.
+
+---
+
 ## Overview
 
 The Okta Admin Console is comprehensive but slow for bulk operations and offers limited visibility into config drift across environments. This tool gives Identity Engineers a fast, scriptable surface for everyday application-management tasks: bulk activate/deactivate, policy assignment, IDP routing rule assignment, and inventory comparison across environments.
