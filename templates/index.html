@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Okta App Admin Dashboard</title>
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>Okta Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
     <style>
         :root { font-size: 87.5%; }
         body { margin: 0; }
         main.container { max-width: 1600px; }
 
-        /* ── Header ── */
         .top-bar {
             display: flex; align-items: center; justify-content: space-between;
             flex-wrap: wrap; gap: 0.75rem;
@@ -21,7 +21,6 @@
         .top-bar hgroup h2 { margin: 0; font-size: 1.15em; }
         .top-bar hgroup p  { margin: 0; color: var(--pico-muted-color); font-size: 0.82em; }
 
-        /* ── Env selector ── */
         .env-bar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
         .env-btn {
             padding: 0.2rem 0.75rem; font-size: 0.82em; border-radius: 999px;
@@ -31,10 +30,9 @@
         .env-btn.active { background: #1b6ca8 !important; border-color: #1b6ca8 !important; color: #fff !important; font-weight: 600; }
         .env-btn.env-prod.active { background: #b71c1c !important; border-color: #b71c1c !important; }
 
-        /* ── Filter bar ── */
         .filter-bar {
             display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.5rem;
         }
         .filter-btn {
             padding: 0.15rem 0.65rem; font-size: 0.82em; border-radius: 999px;
@@ -50,7 +48,35 @@
             border: 1px solid #bbb; outline: none; min-width: 200px;
         }
 
-        /* ── Summary pills ── */
+        /* Action bar — replaces fixed bulk bar */
+        #action-bar {
+            display: none;
+            align-items: center; flex-wrap: wrap; gap: 0.5rem;
+            padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;
+            background: #f0f6ff; border: 1px solid #bed3f3; border-radius: 6px;
+        }
+        #action-bar.visible { display: flex; }
+        #action-count { font-weight: 600; font-size: 0.85em; color: #1b6ca8; white-space: nowrap; }
+        #action-bar select {
+            padding: 0.2rem 0.4rem; font-size: 0.8em; border-radius: 4px;
+            border: 1px solid #bbb; background: #fff; max-width: 180px;
+        }
+        .act-btn {
+            padding: 0.15rem 0.6rem; font-size: 0.8em; border-radius: 4px;
+            border: 1px solid #bbb; background: #fff; cursor: pointer;
+            color: #333 !important; white-space: nowrap;
+        }
+        .act-btn:hover { background: #e8e8e8; }
+        .act-btn.ok   { border-color: #66bb6a; color: #2e7d32 !important; }
+        .act-btn.ok:hover { background: #e8f5e9; }
+        .act-btn.warn { border-color: #ffa726; color: #e65100 !important; }
+        .act-btn.warn:hover { background: #fff3e0; }
+        .act-btn.danger { border-color: #ef9a9a; color: #b71c1c !important; }
+        .act-btn.danger:hover { background: #ffebee; }
+        .act-sep { border-left: 1px solid #ccc; height: 1.4em; }
+        #action-clear { margin-left: auto; font-size: 0.78em; color: #888; cursor: pointer; }
+        #action-clear:hover { color: #b71c1c; }
+
         .pill-bar { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
         .pill {
             display: inline-flex; align-items: center;
@@ -58,13 +84,12 @@
             border: 1px solid var(--pico-muted-border-color);
             background: var(--pico-muted-background-color);
         }
-        .pill-saml   { background: #e3f0fc; border-color: #90caf9; color: #0d47a1; }
-        .pill-oidc   { background: #f3e5f5; border-color: #ce93d8; color: #4a148c; }
-        .pill-active { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
+        .pill-saml    { background: #e3f0fc; border-color: #90caf9; color: #0d47a1; }
+        .pill-oidc    { background: #f3e5f5; border-color: #ce93d8; color: #4a148c; }
+        .pill-active  { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
         .pill-inactive { background: #ffebee; border-color: #ef9a9a; color: #b71c1c; }
-        .pill-sel    { background: #fff8e1; border-color: #ffe082; color: #7b5a00; }
+        .pill-sel     { background: #fff8e1; border-color: #ffe082; color: #7b5a00; }
 
-        /* ── Table ── */
         #app-table { font-size: 0.86em; margin: 0; }
         #app-table th { white-space: nowrap; position: sticky; top: 0; background: var(--pico-background-color); z-index: 1; }
         #app-table td { vertical-align: middle; }
@@ -76,13 +101,12 @@
             font-size: 0.8em; white-space: nowrap;
             border: 1px solid var(--pico-muted-border-color);
         }
-        .chip-saml   { background: #e3f0fc; border-color: #90caf9; color: #0d47a1; }
-        .chip-oidc   { background: #f3e5f5; border-color: #ce93d8; color: #4a148c; }
-        .chip-active { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
+        .chip-saml    { background: #e3f0fc; border-color: #90caf9; color: #0d47a1; }
+        .chip-oidc    { background: #f3e5f5; border-color: #ce93d8; color: #4a148c; }
+        .chip-active  { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
         .chip-inactive { background: #ffebee; border-color: #ef9a9a; color: #b71c1c; }
-        .chip-none   { color: var(--pico-muted-color); font-style: italic; }
+        .chip-none    { color: var(--pico-muted-color); font-style: italic; }
 
-        /* ── Action button in row ── */
         .row-btn {
             padding: 0.1rem 0.55rem; font-size: 0.78em; border-radius: 4px;
             border: 1px solid #bbb; background: #f5f5f5; cursor: pointer;
@@ -91,35 +115,68 @@
         .row-btn:hover { background: #e0e0e0; }
         .row-btn.danger { border-color: #ef9a9a; color: #b71c1c !important; }
         .row-btn.danger:hover { background: #ffebee; }
+        .row-btn.ok { border-color: #66bb6a; color: #2e7d32 !important; }
+        .row-btn.ok:hover { background: #e8f5e9; }
 
-        /* ── Bulk action bar ── */
-        #bulk-bar {
-            position: fixed; bottom: 0; left: 0; right: 0;
-            background: #1e2a3a; color: #fff;
-            padding: 0.65rem 1.5rem;
-            display: none; align-items: center; flex-wrap: wrap; gap: 0.75rem;
-            z-index: 100; box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+        /* Inline rename */
+        .label-text { cursor: default; }
+        .rename-wrap { display: flex; align-items: center; gap: 0.3rem; }
+        .rename-input {
+            font-size: 0.95em; padding: 0.1rem 0.3rem; border-radius: 3px;
+            border: 1px solid #90caf9; outline: none; min-width: 200px; max-width: 360px;
         }
-        #bulk-bar.visible { display: flex; }
-        #bulk-count { font-weight: 600; font-size: 0.9em; margin-right: 0.5rem; white-space: nowrap; }
-        #bulk-bar select {
-            padding: 0.25rem 0.5rem; font-size: 0.82em; border-radius: 4px;
-            border: 1px solid #555; background: #2c3e50; color: #fff; min-width: 180px;
+        .edit-icon {
+            cursor: pointer; opacity: 0; font-size: 0.85em; color: #888;
+            transition: opacity 0.1s; padding: 0 0.15rem;
         }
-        .bulk-btn {
-            padding: 0.25rem 0.75rem; font-size: 0.82em; border-radius: 4px;
-            border: 1px solid #555; background: #2c3e50; cursor: pointer;
-            color: #fff !important; white-space: nowrap;
-        }
-        .bulk-btn:hover { background: #3d5166; }
-        .bulk-btn.ok   { border-color: #4ec9b0; }
-        .bulk-btn.warn { border-color: #ce9178; }
-        .bulk-btn.danger { border-color: #f48771; }
-        .bulk-sep { border-left: 1px solid #444; height: 1.4em; }
-        #bulk-clear { margin-left: auto; font-size: 0.78em; color: #aaa; cursor: pointer; }
-        #bulk-clear:hover { color: #fff; }
+        tr:hover .edit-icon { opacity: 1; }
 
-        /* ── Loading / empty ── */
+        /* Inline notes */
+        .note-cell { max-width: 220px; }
+        .note-text {
+            cursor: pointer; color: var(--pico-muted-color); font-style: italic;
+            font-size: 0.85em; display: block; white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; max-width: 200px;
+        }
+        .note-text.has-note { color: inherit; font-style: normal; }
+        .note-input {
+            font-size: 0.85em; padding: 0.1rem 0.3rem; border-radius: 3px;
+            border: 1px solid #90caf9; outline: none; width: 200px;
+        }
+
+        /* Dashboard visibility chip */
+        .vis-btn-shown  { border-color: #a5d6a7; color: #2e7d32 !important; }
+        .vis-btn-hidden { border-color: #ef9a9a; color: #b71c1c !important; }
+
+        /* Log drawer */
+        #log-drawer {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
+            background: #1e2a3a; color: #c8d8e8; font-family: monospace; font-size: 0.8em;
+            border-top: 2px solid #2c3e50;
+            transform: translateY(100%);
+            transition: transform 0.25s ease;
+            max-height: 220px; display: flex; flex-direction: column;
+        }
+        #log-drawer.open { transform: translateY(0); }
+        #log-drawer-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.3rem 0.75rem; border-bottom: 1px solid #2c3e50;
+            flex-shrink: 0;
+        }
+        #log-drawer-title { font-weight: 600; font-size: 0.95em; color: #8ab4d0; }
+        #log-drawer-close {
+            background: none; border: none; color: #8ab4d0; cursor: pointer;
+            font-size: 1em; padding: 0 0.3rem; line-height: 1;
+        }
+        #log-drawer-close:hover { color: #fff; }
+        #log-panel {
+            overflow-y: auto; padding: 0.4rem 0.75rem; flex: 1;
+        }
+        .log-line { padding: 0.1rem 0; border-bottom: 1px solid #2c3e5044; }
+        .log-ok    { color: #4ec9b0; }
+        .log-err   { color: #f48771; }
+        .log-info  { color: #9cdcfe; }
+
         #loading-msg { text-align: center; padding: 3rem; color: var(--pico-muted-color); font-style: italic; }
         #error-msg   { color: #b71c1c; padding: 1rem; font-size: 0.9em; display: none; }
 
@@ -133,10 +190,9 @@
 <body>
 <main class="container">
 
-    <!-- ── Top bar ── -->
     <div class="top-bar">
         <hgroup>
-            <h2>Okta App Admin Dashboard</h2>
+            <h2>Okta Admin</h2>
             <p>SAML &amp; OIDC application management &mdash; v{{ version }}</p>
         </hgroup>
         <div class="env-bar">
@@ -144,14 +200,13 @@
             <button class="env-btn active" data-env="dev" onclick="setEnv('dev')">DEV</button>
             <button class="env-btn" data-env="stg" onclick="setEnv('stg')">STG</button>
             <button class="env-btn env-prod" data-env="prod" onclick="setEnv('prod')">PROD</button>
+            <a href="/logs" style="padding:0.25rem 1rem; font-size:0.85em; border-radius:999px; border:1px solid #bbb; background:#f0f0f0; color:#333; text-decoration:none">Logs</a>
             <button onclick="loadApps()" style="margin:0; padding:0.25rem 1rem; font-size:0.85em">Load Apps</button>
         </div>
     </div>
 
-    <!-- ── Error ── -->
     <div id="error-msg"></div>
 
-    <!-- ── Summary pills ── -->
     <div class="pill-bar" id="pill-bar" style="display:none">
         <span class="pill" id="pill-total"></span>
         <span class="pill pill-saml" id="pill-saml"></span>
@@ -161,27 +216,58 @@
         <span class="pill pill-sel" id="pill-sel" style="display:none"></span>
     </div>
 
-    <!-- ── Filter bar ── -->
     <div class="filter-bar" id="filter-bar" style="display:none">
         <input id="search-box" type="search" placeholder="Search apps…" oninput="applyFilters()">
         <span style="font-size:0.8em; color:var(--pico-muted-color)">Type:</span>
         <button class="filter-btn active-filter" data-type="all" onclick="setTypeFilter('all')">All</button>
         <button class="filter-btn" data-type="SAML_2_0" onclick="setTypeFilter('SAML_2_0')">SAML</button>
         <button class="filter-btn" data-type="OPENID_CONNECT" onclick="setTypeFilter('OPENID_CONNECT')">OIDC</button>
-        <span class="bulk-sep" style="border-color:#ddd; height:1.2em"></span>
+        <span style="border-left:1px solid #ddd; height:1.2em"></span>
         <span style="font-size:0.8em; color:var(--pico-muted-color)">Status:</span>
         <button class="filter-btn active-filter" data-status="all" onclick="setStatusFilter('all')">All</button>
         <button class="filter-btn" data-status="ACTIVE" onclick="setStatusFilter('ACTIVE')">Active</button>
         <button class="filter-btn" data-status="INACTIVE" onclick="setStatusFilter('INACTIVE')">Inactive</button>
-        <span class="bulk-sep" style="border-color:#ddd; height:1.2em"></span>
+        <span style="border-left:1px solid #ddd; height:1.2em"></span>
         <button class="filter-btn" onclick="selectAllVisible()" style="font-size:0.75em">Select All</button>
         <button class="filter-btn" onclick="clearSelection()" style="font-size:0.75em">Clear</button>
     </div>
 
-    <!-- ── Loading ── -->
-    <div id="loading-msg" style="display:none">Loading apps from Okta&hellip; (this may take a moment)</div>
+    <!-- Action bar: appears when apps are selected -->
+    <div id="action-bar">
+        <span id="action-count"></span>
+        <div class="act-sep"></div>
 
-    <!-- ── App table ── -->
+        <span style="font-size:0.78em; opacity:0.7">Policy:</span>
+        <select id="bulk-policy-select"><option value="">— select —</option></select>
+        <button class="act-btn ok" onclick="bulkAssignPolicy()">Apply</button>
+
+        <div class="act-sep"></div>
+
+        <span style="font-size:0.78em; opacity:0.7">Routing Rule:</span>
+        <select id="bulk-rule-select"><option value="">— select —</option></select>
+        <button class="act-btn ok" onclick="bulkAssignRule('add')">Add</button>
+        <button class="act-btn warn" onclick="bulkAssignRule('remove')">Remove</button>
+
+        <div class="act-sep"></div>
+
+        <button class="act-btn ok" onclick="bulkToggleStatus('activate')">Activate</button>
+        <button class="act-btn danger" onclick="bulkToggleStatus('deactivate')">Deactivate</button>
+
+        <div class="act-sep"></div>
+
+        <button class="act-btn ok" onclick="bulkVisibility(false)">Show Dashboard</button>
+        <button class="act-btn warn" onclick="bulkVisibility(true)">Hide Dashboard</button>
+
+        <div class="act-sep"></div>
+
+        <button class="act-btn" id="sp-config-btn" onclick="downloadSpConfigs()">SP Config</button>
+        <span id="sp-config-status" style="font-size:0.78em; color:#888; display:none">Generating…</span>
+
+        <span id="action-clear" onclick="clearSelection()">&times; Clear</span>
+    </div>
+
+    <div id="loading-msg" style="display:none">Loading apps from Okta&hellip;</div>
+
     <div style="overflow-x:auto">
         <table id="app-table" style="display:none">
             <thead>
@@ -190,8 +276,10 @@
                     <th onclick="sortBy('label')" style="cursor:pointer">App Name ↕</th>
                     <th>Type</th>
                     <th>Status</th>
+                    <th>Dashboard</th>
                     <th>Auth Policy</th>
                     <th>Routing Rule</th>
+                    <th class="note-cell">Notes</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -199,36 +287,20 @@
         </table>
     </div>
 
-    <footer>Okta App Admin Dashboard &mdash; Local use only</footer>
+    <footer>Okta Admin &mdash; Local use only</footer>
 
 </main>
 
-<!-- ── Bulk action bar ── -->
-<div id="bulk-bar">
-    <span id="bulk-count"></span>
-    <div class="bulk-sep"></div>
-
-    <span style="font-size:0.8em; opacity:0.7">Policy:</span>
-    <select id="bulk-policy-select"><option value="">— select policy —</option></select>
-    <button class="bulk-btn ok" onclick="bulkAssignPolicy()">Apply Policy</button>
-
-    <div class="bulk-sep"></div>
-
-    <span style="font-size:0.8em; opacity:0.7">Routing Rule:</span>
-    <select id="bulk-rule-select"><option value="">— select rule —</option></select>
-    <button class="bulk-btn ok" onclick="bulkAssignRule('add')">Add to Rule</button>
-    <button class="bulk-btn warn" onclick="bulkAssignRule('remove')">Remove from Rule</button>
-
-    <div class="bulk-sep"></div>
-
-    <button class="bulk-btn ok" onclick="bulkToggleStatus('activate')">Activate</button>
-    <button class="bulk-btn danger" onclick="bulkToggleStatus('deactivate')">Deactivate</button>
-
-    <span id="bulk-clear" onclick="clearSelection()">&times; Clear selection</span>
+<!-- Log drawer -->
+<div id="log-drawer">
+    <div id="log-drawer-header">
+        <span id="log-drawer-title">Activity</span>
+        <button id="log-drawer-close" onclick="closeLogDrawer()" title="Dismiss">&#x2715;</button>
+    </div>
+    <div id="log-panel"></div>
 </div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
 let allApps = [];
 let filteredApps = [];
 let selectedIds = new Set();
@@ -240,20 +312,44 @@ let sortAsc = true;
 let policies = [];
 let routingRules = [];
 
-// ── Env ────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Log drawer
+// ---------------------------------------------------------------------------
+
+function openLogDrawer(title) {
+    document.getElementById('log-drawer-title').textContent = title || 'Activity';
+    document.getElementById('log-drawer').classList.add('open');
+}
+function closeLogDrawer() {
+    document.getElementById('log-drawer').classList.remove('open');
+}
+function logLine(msg, cls) {
+    const p = document.getElementById('log-panel');
+    const d = document.createElement('div');
+    d.className = `log-line${cls ? ' ' + cls : ''}`;
+    d.textContent = msg;
+    p.appendChild(d);
+    p.scrollTop = p.scrollHeight;
+}
+function clearLog() {
+    document.getElementById('log-panel').innerHTML = '';
+}
+
+// ---------------------------------------------------------------------------
+// Env / load
+// ---------------------------------------------------------------------------
+
 function setEnv(env) {
     currentEnv = env;
     document.querySelectorAll('.env-btn').forEach(b => b.classList.toggle('active', b.dataset.env === env));
-    // Reset state
     allApps = []; filteredApps = []; selectedIds.clear();
     document.getElementById('app-table').style.display = 'none';
     document.getElementById('pill-bar').style.display = 'none';
     document.getElementById('filter-bar').style.display = 'none';
     document.getElementById('error-msg').style.display = 'none';
-    updateBulkBar();
+    updateActionBar();
 }
 
-// ── Load ───────────────────────────────────────────────────────────────────
 async function loadApps() {
     showError('');
     document.getElementById('loading-msg').style.display = 'block';
@@ -268,9 +364,9 @@ async function loadApps() {
             fetch(`/api/policies?env=${currentEnv}`),
             fetch(`/api/routing-rules?env=${currentEnv}`),
         ]);
-        const appsData  = await appsResp.json();
-        const polData   = await polResp.json();
-        const ruleData  = await ruleResp.json();
+        const appsData = await appsResp.json();
+        const polData  = await polResp.json();
+        const ruleData = await ruleResp.json();
 
         if (appsData.error) { showError(appsData.error); return; }
 
@@ -294,18 +390,17 @@ async function loadApps() {
 
 function populateBulkSelects() {
     const ps = document.getElementById('bulk-policy-select');
-    ps.innerHTML = '<option value="">— select policy —</option>';
-    for (const p of policies) {
-        ps.innerHTML += `<option value="${p.id}">${escHtml(p.name)}</option>`;
-    }
+    ps.innerHTML = '<option value="">— select —</option>';
+    for (const p of policies) ps.innerHTML += `<option value="${p.id}">${escHtml(p.name)}</option>`;
     const rs = document.getElementById('bulk-rule-select');
-    rs.innerHTML = '<option value="">— select rule —</option>';
-    for (const r of routingRules) {
-        rs.innerHTML += `<option value="${r.id}|${r.policy_id}">${escHtml(r.name)}</option>`;
-    }
+    rs.innerHTML = '<option value="">— select —</option>';
+    for (const r of routingRules) rs.innerHTML += `<option value="${r.id}|${r.policy_id}">${escHtml(r.name)}</option>`;
 }
 
-// ── Filters ────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Filters / sort
+// ---------------------------------------------------------------------------
+
 function setTypeFilter(f) {
     typeFilter = f;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active-filter', b.dataset.type === f));
@@ -316,7 +411,6 @@ function setStatusFilter(f) {
     document.querySelectorAll('[data-status]').forEach(b => b.classList.toggle('active-filter', b.dataset.status === f));
     applyFilters();
 }
-
 function applyFilters() {
     const q = (document.getElementById('search-box')?.value || '').toLowerCase();
     filteredApps = allApps.filter(a => {
@@ -325,7 +419,6 @@ function applyFilters() {
         if (q && !a.label.toLowerCase().includes(q)) return false;
         return true;
     });
-    // stable sort
     filteredApps.sort((a, b) => {
         const av = (a[sortKey] || '').toLowerCase();
         const bv = (b[sortKey] || '').toLowerCase();
@@ -334,14 +427,16 @@ function applyFilters() {
     renderTable();
     updatePills();
 }
-
 function sortBy(key) {
     if (sortKey === key) sortAsc = !sortAsc;
     else { sortKey = key; sortAsc = true; }
     applyFilters();
 }
 
-// ── Render table ───────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+
 function renderTable() {
     const tbody = document.getElementById('app-tbody');
     tbody.innerHTML = '';
@@ -354,25 +449,40 @@ function renderTable() {
         const statusChip = isActive
             ? '<span class="chip chip-active">Active</span>'
             : '<span class="chip chip-inactive">Inactive</span>';
-        const policyCell = a.policy_name
-            ? escHtml(a.policy_name)
-            : '<span class="chip-none">—</span>';
-        const ruleCell = a.routing_rule_name
-            ? escHtml(a.routing_rule_name)
-            : '<span class="chip-none">—</span>';
+        const policyCell = a.policy_name ? escHtml(a.policy_name) : '<span class="chip-none">—</span>';
+        const ruleCell   = a.routing_rule_name ? escHtml(a.routing_rule_name) : '<span class="chip-none">—</span>';
         const toggleLabel = isActive ? 'Deactivate' : 'Activate';
-        const toggleCls   = isActive ? 'row-btn danger' : 'row-btn';
+        const toggleCls   = isActive ? 'row-btn danger' : 'row-btn ok';
+        const visCls  = !isActive ? 'row-btn' : (a.dashboard_hidden ? 'row-btn vis-btn-hidden' : 'row-btn vis-btn-shown');
+        const visLabel = !isActive ? 'N/A' : (a.dashboard_hidden ? 'Hidden' : 'Shown');
+        const visDisabled = !isActive ? 'disabled title="Inactive apps cannot be shown on dashboard"' : '';
+        const noteText = a.note || '';
+        const noteCls  = noteText ? 'note-text has-note' : 'note-text';
+        const notePlaceholder = noteText ? escHtml(noteText) : 'Add note…';
 
         const tr = document.createElement('tr');
         if (!isActive) tr.classList.add('inactive-row');
         tr.dataset.id = a.id;
         tr.innerHTML = `
             <td><input type="checkbox" ${checked} onchange="toggleSelect('${a.id}', this.checked)"></td>
-            <td style="font-weight:500">${escHtml(a.label)}</td>
+            <td style="font-weight:500; white-space:nowrap">
+                <div class="rename-wrap">
+                    <span class="label-text" id="lbl-${a.id}">${escHtml(a.label)}</span>
+                    <span class="edit-icon" title="Rename" onclick="startRename('${a.id}')">&#9998;</span>
+                </div>
+            </td>
             <td>${typeChip}</td>
             <td>${statusChip}</td>
+            <td>
+                <button class="${visCls}" id="vis-${a.id}" ${visDisabled}
+                    onclick="toggleVisibility('${a.id}', ${!a.dashboard_hidden}, this)">${visLabel}</button>
+            </td>
             <td style="font-size:0.9em">${policyCell}</td>
             <td style="font-size:0.9em">${ruleCell}</td>
+            <td class="note-cell">
+                <span class="${noteCls}" id="note-${a.id}"
+                    onclick="startNoteEdit('${a.id}')">${notePlaceholder}</span>
+            </td>
             <td>
                 <button class="${toggleCls}" onclick="singleToggle('${a.id}', '${isActive ? 'deactivate' : 'activate'}', this)">${toggleLabel}</button>
             </td>
@@ -382,179 +492,467 @@ function renderTable() {
     document.getElementById('check-all').checked = false;
 }
 
-// ── Selection ──────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Selection
+// ---------------------------------------------------------------------------
+
 function toggleSelect(id, checked) {
-    if (checked) selectedIds.add(id);
-    else selectedIds.delete(id);
-    updateBulkBar();
-    updatePills();
+    if (checked) selectedIds.add(id); else selectedIds.delete(id);
+    updateActionBar(); updatePills();
 }
 function toggleAll(cb) {
     filteredApps.forEach(a => { if (cb.checked) selectedIds.add(a.id); else selectedIds.delete(a.id); });
     document.querySelectorAll('#app-tbody input[type=checkbox]').forEach(c => c.checked = cb.checked);
-    updateBulkBar();
-    updatePills();
+    updateActionBar(); updatePills();
 }
 function selectAllVisible() {
     filteredApps.forEach(a => selectedIds.add(a.id));
     document.querySelectorAll('#app-tbody input[type=checkbox]').forEach(c => c.checked = true);
-    updateBulkBar();
-    updatePills();
+    updateActionBar(); updatePills();
 }
 function clearSelection() {
     selectedIds.clear();
     document.querySelectorAll('#app-tbody input[type=checkbox]').forEach(c => c.checked = false);
     document.getElementById('check-all').checked = false;
-    updateBulkBar();
-    updatePills();
+    updateActionBar(); updatePills();
 }
 
-// ── Bulk bar ───────────────────────────────────────────────────────────────
-function updateBulkBar() {
-    const bar = document.getElementById('bulk-bar');
+function updateActionBar() {
     const n = selectedIds.size;
+    const bar = document.getElementById('action-bar');
     if (n > 0) {
         bar.classList.add('visible');
-        document.getElementById('bulk-count').textContent = `${n} selected`;
+        document.getElementById('action-count').textContent = `${n} selected`;
     } else {
         bar.classList.remove('visible');
     }
 }
 
-// ── Pills ──────────────────────────────────────────────────────────────────
 function updatePills() {
-    const saml = allApps.filter(a => a.sign_on_mode === 'SAML_2_0').length;
-    const oidc = allApps.filter(a => a.sign_on_mode === 'OPENID_CONNECT').length;
-    const active = allApps.filter(a => a.status === 'ACTIVE').length;
+    const saml     = allApps.filter(a => a.sign_on_mode === 'SAML_2_0').length;
+    const oidc     = allApps.filter(a => a.sign_on_mode === 'OPENID_CONNECT').length;
+    const active   = allApps.filter(a => a.status === 'ACTIVE').length;
     const inactive = allApps.filter(a => a.status === 'INACTIVE').length;
-    document.getElementById('pill-total').textContent   = `Total: ${allApps.length}`;
-    document.getElementById('pill-saml').textContent    = `SAML: ${saml}`;
-    document.getElementById('pill-oidc').textContent    = `OIDC: ${oidc}`;
-    document.getElementById('pill-active').textContent  = `Active: ${active}`;
+    document.getElementById('pill-total').textContent    = `Total: ${allApps.length}`;
+    document.getElementById('pill-saml').textContent     = `SAML: ${saml}`;
+    document.getElementById('pill-oidc').textContent     = `OIDC: ${oidc}`;
+    document.getElementById('pill-active').textContent   = `Active: ${active}`;
     document.getElementById('pill-inactive').textContent = `Inactive: ${inactive}`;
     const selPill = document.getElementById('pill-sel');
-    if (selectedIds.size > 0) {
-        selPill.textContent = `Selected: ${selectedIds.size}`;
-        selPill.style.display = '';
-    } else {
-        selPill.style.display = 'none';
+    if (selectedIds.size > 0) { selPill.textContent = `Selected: ${selectedIds.size}`; selPill.style.display = ''; }
+    else selPill.style.display = 'none';
+}
+
+// ---------------------------------------------------------------------------
+// Inline rename
+// ---------------------------------------------------------------------------
+
+function startRename(appId) {
+    const lblEl = document.getElementById(`lbl-${appId}`);
+    if (!lblEl) return;
+    const a = allApps.find(x => x.id === appId);
+    if (!a) return;
+    const current = a.label;
+    const input = document.createElement('input');
+    input.className = 'rename-input';
+    input.value = current;
+    input.style.display = 'inline-block';
+    lblEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    async function commit() {
+        const newLabel = input.value.trim();
+        if (!newLabel || newLabel === current) {
+            // revert
+            const span = document.createElement('span');
+            span.className = 'label-text';
+            span.id = `lbl-${appId}`;
+            span.textContent = current;
+            input.replaceWith(span);
+            return;
+        }
+        input.disabled = true;
+        try {
+            const resp = await fetch('/api/rename', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({env: currentEnv, app_id: appId, label: newLabel})
+            });
+            const data = await resp.json();
+            if (data.error) {
+                logLine(`Rename failed [${escHtml(current)}]: ${data.error}`, 'log-err');
+                openLogDrawer('Activity');
+                input.disabled = false;
+                return;
+            }
+            a.label = newLabel;
+            logLine(`Renamed: "${current}" → "${newLabel}"`, 'log-ok');
+            openLogDrawer('Activity');
+        } catch(e) {
+            logLine(`Rename error: ${e}`, 'log-err');
+            openLogDrawer('Activity');
+            input.disabled = false;
+            return;
+        }
+        const span = document.createElement('span');
+        span.className = 'label-text';
+        span.id = `lbl-${appId}`;
+        span.textContent = a.label;
+        input.replaceWith(span);
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = current; input.blur(); }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Inline notes
+// ---------------------------------------------------------------------------
+
+function startNoteEdit(appId) {
+    const noteEl = document.getElementById(`note-${appId}`);
+    if (!noteEl) return;
+    const a = allApps.find(x => x.id === appId);
+    if (!a) return;
+    const current = a.note || '';
+    const input = document.createElement('input');
+    input.className = 'note-input';
+    input.value = current;
+    input.placeholder = 'Add note…';
+    noteEl.replaceWith(input);
+    input.focus();
+
+    async function commit() {
+        const newNote = input.value.trim();
+        if (newNote === current) {
+            restoreNoteSpan(appId, a);
+            return;
+        }
+        input.disabled = true;
+        try {
+            const resp = await fetch('/api/note', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({env: currentEnv, app_id: appId, note: newNote})
+            });
+            const data = await resp.json();
+            if (data.error) {
+                logLine(`Note save failed [${escHtml(a.label)}]: ${data.error}`, 'log-err');
+                openLogDrawer('Activity');
+                input.disabled = false;
+                return;
+            }
+            a.note = newNote;
+            logLine(`Note saved [${escHtml(a.label)}]`, 'log-ok');
+            openLogDrawer('Activity');
+        } catch(e) {
+            logLine(`Note error: ${e}`, 'log-err');
+            openLogDrawer('Activity');
+            input.disabled = false;
+            return;
+        }
+        restoreNoteSpan(appId, a);
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = current; input.blur(); }
+    });
+}
+
+function restoreNoteSpan(appId, a) {
+    const span = document.createElement('span');
+    span.id = `note-${appId}`;
+    span.className = a.note ? 'note-text has-note' : 'note-text';
+    span.textContent = a.note || 'Add note…';
+    span.onclick = () => startNoteEdit(appId);
+    const tr = document.querySelector(`tr[data-id="${appId}"]`);
+    if (tr) {
+        const noteCell = tr.querySelector('.note-cell');
+        if (noteCell) noteCell.innerHTML = '';
+        if (noteCell) noteCell.appendChild(span);
     }
 }
 
-// ── Single row actions ─────────────────────────────────────────────────────
-async function singleToggle(appId, action, btn) {
+// ---------------------------------------------------------------------------
+// Dashboard visibility
+// ---------------------------------------------------------------------------
+
+async function toggleVisibility(appId, hideVal, btn) {
     btn.disabled = true;
-    btn.textContent = '…';
+    const a = allApps.find(x => x.id === appId);
+    try {
+        const resp = await fetch('/api/visibility', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({env: currentEnv, app_ids: [appId], hide: hideVal})
+        });
+        const data = await resp.json();
+        if (data[appId] && data[appId] !== 'ok') throw new Error(data[appId]);
+        if (a) a.dashboard_hidden = hideVal;
+        btn.textContent = hideVal ? 'Hidden' : 'Shown';
+        btn.className = hideVal ? 'row-btn vis-btn-hidden' : 'row-btn vis-btn-shown';
+        btn.onclick = () => toggleVisibility(appId, !hideVal, btn);
+        logLine(`Dashboard ${hideVal ? 'hidden' : 'shown'}: ${escHtml(a?.label || appId)}`, 'log-ok');
+        openLogDrawer('Activity');
+    } catch(e) {
+        logLine(`Visibility error [${escHtml(a?.label || appId)}]: ${e}`, 'log-err');
+        openLogDrawer('Activity');
+    }
+    btn.disabled = false;
+}
+
+async function bulkVisibility(hide) {
+    if (!selectedIds.size) return;
+    const allIds = [...selectedIds];
+    const ids = allIds.filter(id => {
+        const a = allApps.find(x => x.id === id);
+        return a && a.status === 'ACTIVE';
+    });
+    const skipped = allIds.length - ids.length;
+    clearLog();
+    openLogDrawer('Dashboard Visibility');
+    if (skipped > 0) logLine(`Skipping ${skipped} inactive app(s) — visibility requires active status`, 'log-info');
+    if (!ids.length) { logLine('No active apps selected.', 'log-info'); return; }
+    logLine(`Setting dashboard ${hide ? 'hidden' : 'shown'} for ${ids.length} app(s)…`, 'log-info');
+    try {
+        const resp = await fetch('/api/visibility', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({env: currentEnv, app_ids: ids, hide})
+        });
+        const results = await resp.json();
+        if (results.error) { logLine(`Error: ${results.error}`, 'log-err'); return; }
+        let ok = 0, errs = 0;
+        for (const [id, res] of Object.entries(results)) {
+            const a = allApps.find(x => x.id === id);
+            if (res === 'ok') {
+                if (a) a.dashboard_hidden = hide;
+                ok++;
+            } else {
+                logLine(`  ✗ ${escHtml(a?.label || id)}: ${res}`, 'log-err');
+                errs++;
+            }
+        }
+        logLine(`Done — ${ok} ok${errs ? ', ' + errs + ' failed' : ''}`, ok > 0 ? 'log-ok' : 'log-err');
+        applyFilters();
+    } catch(e) {
+        logLine(`Network error: ${e}`, 'log-err');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Activate / Deactivate
+// ---------------------------------------------------------------------------
+
+async function singleToggle(appId, action, btn) {
+    btn.disabled = true; btn.textContent = '…';
     try {
         const resp = await fetch('/api/toggle-status', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({env: currentEnv, app_id: appId, action})
         });
         const data = await resp.json();
-        if (data.error) { alert(`Error: ${data.error}`); btn.disabled = false; btn.textContent = action === 'deactivate' ? 'Deactivate' : 'Activate'; return; }
-        // Update local state
-        const app = allApps.find(a => a.id === appId);
-        if (app) app.status = data.status;
+        if (data.error) {
+            logLine(`Toggle failed: ${data.error}`, 'log-err');
+            openLogDrawer('Activity');
+            btn.disabled = false;
+            btn.textContent = action === 'deactivate' ? 'Deactivate' : 'Activate';
+            return;
+        }
+        const a = allApps.find(x => x.id === appId);
+        if (a) a.status = data.status;
+        logLine(`${action === 'activate' ? 'Activated' : 'Deactivated'}: ${escHtml(a?.label || appId)}`, 'log-ok');
+        openLogDrawer('Activity');
         applyFilters();
     } catch (e) {
-        alert(`Network error: ${e}`);
+        logLine(`Network error: ${e}`, 'log-err');
+        openLogDrawer('Activity');
         btn.disabled = false;
     }
 }
 
-// ── Bulk actions ───────────────────────────────────────────────────────────
+async function bulkToggleStatus(action) {
+    if (!selectedIds.size) return;
+    const allIds = [...selectedIds];
+    const targetStatus = action === 'activate' ? 'INACTIVE' : 'ACTIVE';
+    const ids = allIds.filter(id => {
+        const a = allApps.find(x => x.id === id);
+        return a && a.status === targetStatus;
+    });
+    const skipped = allIds.length - ids.length;
+    clearLog();
+    openLogDrawer(action === 'activate' ? 'Activate Apps' : 'Deactivate Apps');
+    if (skipped > 0) logLine(`Skipping ${skipped} app(s) already ${action === 'activate' ? 'active' : 'inactive'}`, 'log-info');
+    if (!ids.length) { logLine('No eligible apps to ' + action + '.', 'log-info'); return; }
+    logLine(`${action === 'activate' ? 'Activating' : 'Deactivating'} ${ids.length} app(s)…`, 'log-info');
+    let ok = 0, errs = 0;
+    for (const appId of ids) {
+        try {
+            const resp = await fetch('/api/toggle-status', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({env: currentEnv, app_id: appId, action})
+            });
+            const data = await resp.json();
+            const a = allApps.find(x => x.id === appId);
+            if (data.error) {
+                logLine(`  ✗ ${escHtml(a?.label || appId)}: ${data.error}`, 'log-err');
+                errs++;
+            } else {
+                if (a) a.status = data.status;
+                ok++;
+            }
+        } catch (e) {
+            logLine(`  ✗ ${appId}: ${e}`, 'log-err');
+            errs++;
+        }
+    }
+    logLine(`Done — ${ok} ok${errs ? ', ' + errs + ' failed' : ''}`, ok > 0 ? 'log-ok' : 'log-err');
+    applyFilters();
+}
+
+// ---------------------------------------------------------------------------
+// Bulk policy / routing rule
+// ---------------------------------------------------------------------------
+
 async function bulkAssignPolicy() {
     const policyId = document.getElementById('bulk-policy-select').value;
     if (!policyId) { alert('Select a policy first.'); return; }
-    if (!selectedIds.size) { alert('No apps selected.'); return; }
-    if (!confirm(`Apply selected policy to ${selectedIds.size} app(s)?`)) return;
-
-    const resp = await fetch('/api/assign-policy', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({env: currentEnv, app_ids: [...selectedIds], policy_id: policyId})
-    });
-    const results = await resp.json();
-    if (results.error) { alert(`Error: ${results.error}`); return; }
-
+    if (!selectedIds.size) return;
+    const allIds = [...selectedIds];
+    const ids = allIds.filter(id => { const a = allApps.find(x => x.id === id); return a && a.status === 'ACTIVE'; });
+    const skipped = allIds.length - ids.length;
     const policyName = document.getElementById('bulk-policy-select').selectedOptions[0].text;
-    const errors = Object.entries(results).filter(([,v]) => v !== 'ok');
-    // Update local state
-    for (const [id, res] of Object.entries(results)) {
-        if (res === 'ok') {
+    clearLog();
+    openLogDrawer('Assign Policy');
+    if (skipped > 0) logLine(`Skipping ${skipped} inactive app(s)`, 'log-info');
+    if (!ids.length) { logLine('No active apps selected.', 'log-info'); return; }
+    logLine(`Assigning "${policyName}" to ${ids.length} app(s)…`, 'log-info');
+    try {
+        const resp = await fetch('/api/assign-policy', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({env: currentEnv, app_ids: ids, policy_id: policyId})
+        });
+        const results = await resp.json();
+        if (results.error) { logLine(`Error: ${results.error}`, 'log-err'); return; }
+        let ok = 0, errs = 0;
+        for (const [id, res] of Object.entries(results)) {
             const a = allApps.find(x => x.id === id);
-            if (a) { a.policy_id = policyId; a.policy_name = policyName; }
+            if (res === 'ok') { if (a) { a.policy_id = policyId; a.policy_name = policyName; } ok++; }
+            else { logLine(`  ✗ ${escHtml(a?.label || id)}: ${res}`, 'log-err'); errs++; }
         }
+        logLine(`Done — ${ok} ok${errs ? ', ' + errs + ' failed' : ''}`, ok > 0 ? 'log-ok' : 'log-err');
+        applyFilters();
+    } catch(e) {
+        logLine(`Network error: ${e}`, 'log-err');
     }
-    applyFilters();
-    if (errors.length) alert(`${errors.length} error(s):\n${errors.map(([id,e]) => `${id}: ${e}`).join('\n')}`);
 }
 
 async function bulkAssignRule(action) {
     const val = document.getElementById('bulk-rule-select').value;
     if (!val) { alert('Select a routing rule first.'); return; }
-    if (!selectedIds.size) { alert('No apps selected.'); return; }
+    if (!selectedIds.size) return;
+    const allIds = [...selectedIds];
+    const ids = allIds.filter(id => { const a = allApps.find(x => x.id === id); return a && a.status === 'ACTIVE'; });
+    const skipped = allIds.length - ids.length;
     const [ruleId, rulePolicyId] = val.split('|');
     const ruleName = document.getElementById('bulk-rule-select').selectedOptions[0].text;
-    const verb = action === 'add' ? 'add to' : 'remove from';
-    if (!confirm(`${verb} routing rule "${ruleName}" for ${selectedIds.size} app(s)?`)) return;
-
-    const resp = await fetch('/api/assign-routing-rule', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({env: currentEnv, app_ids: [...selectedIds], rule_id: ruleId, rule_policy_id: rulePolicyId, action})
-    });
-    const results = await resp.json();
-    if (results.error) { alert(`Error: ${results.error}`); return; }
-
-    const errors = Object.entries(results).filter(([,v]) => v !== 'ok');
-    // Update local state
-    for (const [id, res] of Object.entries(results)) {
-        if (res === 'ok') {
+    clearLog();
+    openLogDrawer('Routing Rule');
+    if (skipped > 0) logLine(`Skipping ${skipped} inactive app(s)`, 'log-info');
+    if (!ids.length) { logLine('No active apps selected.', 'log-info'); return; }
+    logLine(`${action === 'add' ? 'Adding to' : 'Removing from'} rule "${ruleName}" — ${ids.length} app(s)…`, 'log-info');
+    try {
+        const resp = await fetch('/api/assign-routing-rule', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({env: currentEnv, app_ids: ids, rule_id: ruleId, rule_policy_id: rulePolicyId, action})
+        });
+        const results = await resp.json();
+        if (results.error) { logLine(`Error: ${results.error}`, 'log-err'); return; }
+        let ok = 0, errs = 0;
+        for (const [id, res] of Object.entries(results)) {
             const a = allApps.find(x => x.id === id);
-            if (a) {
-                if (action === 'add') { a.routing_rule_id = ruleId; a.routing_rule_name = ruleName; a.routing_policy_id = rulePolicyId; }
-                else { a.routing_rule_id = null; a.routing_rule_name = null; a.routing_policy_id = null; }
+            if (res === 'ok') {
+                if (a) {
+                    if (action === 'add') { a.routing_rule_id = ruleId; a.routing_rule_name = ruleName; a.routing_policy_id = rulePolicyId; }
+                    else { a.routing_rule_id = null; a.routing_rule_name = null; a.routing_policy_id = null; }
+                }
+                ok++;
+            } else {
+                logLine(`  ✗ ${escHtml(a?.label || id)}: ${res}`, 'log-err');
+                errs++;
             }
         }
+        logLine(`Done — ${ok} ok${errs ? ', ' + errs + ' failed' : ''}`, ok > 0 ? 'log-ok' : 'log-err');
+        applyFilters();
+    } catch(e) {
+        logLine(`Network error: ${e}`, 'log-err');
     }
-    applyFilters();
-    if (errors.length) alert(`${errors.length} error(s):\n${errors.map(([id,e]) => `${id}: ${e}`).join('\n')}`);
 }
 
-async function bulkToggleStatus(action) {
-    if (!selectedIds.size) { alert('No apps selected.'); return; }
-    if (!confirm(`${action} ${selectedIds.size} app(s)?`)) return;
-    const ids = [...selectedIds];
-    let errors = [];
-    for (const appId of ids) {
-        try {
-            const resp = await fetch('/api/toggle-status', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({env: currentEnv, app_id: appId, action})
-            });
-            const data = await resp.json();
-            if (data.error) errors.push(`${appId}: ${data.error}`);
-            else {
-                const a = allApps.find(x => x.id === appId);
-                if (a) a.status = data.status;
-            }
-        } catch (e) { errors.push(`${appId}: ${e}`); }
+// ---------------------------------------------------------------------------
+// SP Config
+// ---------------------------------------------------------------------------
+
+async function downloadSpConfigs() {
+    const samlSelected = allApps.filter(a =>
+        selectedIds.has(a.id) && a.sign_on_mode === 'SAML_2_0'
+    );
+    if (samlSelected.length === 0) {
+        alert('Select one or more SAML apps first.');
+        return;
     }
-    applyFilters();
-    if (errors.length) alert(`${errors.length} error(s):\n${errors.join('\n')}`);
+
+    const btn = document.getElementById('sp-config-btn');
+    const status = document.getElementById('sp-config-status');
+    btn.disabled = true;
+    status.style.display = 'inline';
+    const estSecs = samlSelected.length * 30;
+    const estStr = estSecs >= 60 ? `~${Math.round(estSecs/60)} min` : `~${estSecs}s`;
+    status.textContent = `Generating ${samlSelected.length} config(s)… est. ${estStr}`;
+
+    try {
+        const resp = await fetch('/api/sp-config-zip', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({app_ids: samlSelected.map(a => a.id), env: currentEnv})
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({error: resp.statusText}));
+            status.textContent = `Error: ${err.error || resp.statusText}`;
+            setTimeout(() => { status.style.display = 'none'; }, 5000);
+            return;
+        }
+        const blob = await resp.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        const disp = resp.headers.get('Content-Disposition') || '';
+        const match = disp.match(/filename="?([^"]+)"?/);
+        a.download = match ? match[1] : 'sp-configs.zip';
+        a.href = url;
+        a.click();
+        URL.revokeObjectURL(url);
+        status.textContent = 'Downloaded.';
+        setTimeout(() => { status.style.display = 'none'; }, 3000);
+    } catch (e) {
+        status.textContent = `Error: ${e}`;
+        setTimeout(() => { status.style.display = 'none'; }, 5000);
+    } finally {
+        btn.disabled = false;
+    }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Util
+// ---------------------------------------------------------------------------
+
 function showError(msg) {
     const el = document.getElementById('error-msg');
     el.textContent = msg ? `Error: ${msg}` : '';
     el.style.display = msg ? 'block' : 'none';
     if (msg) document.getElementById('loading-msg').style.display = 'none';
 }
-
 function escHtml(s) {
     return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }

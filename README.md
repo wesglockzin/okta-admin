@@ -1,57 +1,53 @@
-# Okta App Admin Dashboard
+# Okta Admin
 
-## The Problem
+A local Flask web UI for managing Okta SAML and OIDC applications across DEV / STG / PROD environments — without touching the Okta Admin Console.
 
-During a large-scale ADFS → Okta migration with 200+ applications, the Okta Admin Console becomes a bottleneck. Policy assignment, routing rule configuration, and app activation/deactivation are one-at-a-time operations in the UI. There's no bulk view that shows app inventory, current policy assignments, and routing rules in one place — making it impossible to verify migration state at a glance or make bulk changes efficiently.
+## Overview
 
-## What It Does
+The Okta Admin Console is comprehensive but slow for bulk operations and offers limited visibility into config drift across environments. This tool gives Identity Engineers a fast, scriptable surface for everyday application-management tasks: bulk activate/deactivate, policy assignment, IDP routing rule assignment, and inventory comparison across environments.
 
-A local web UI for Okta app management, built on top of the Okta API:
+## Features
 
-- View full SAML + OIDC app inventory across environments (DEV/STG/PROD)
-- Assign authentication policies and routing rules to apps
-- Activate and deactivate apps
-- Bulk operations across multiple apps
-- Secure token storage via OS Keyring — no credentials in config files
+* **App inventory** across DEV, STG, PROD with at-a-glance status
+* **Authentication policy assignment** — bulk apply / change policy per app
+* **IDP routing rule assignment** — wire apps to the right routing rules
+* **Activate / deactivate** — toggle app status without console clicks
+* **Action logging** — every API mutation appended to `okta-admin-actions.log`
+* **Per-edit backups** — `backups/<filename>.bak` written before every file edit, by convention
 
-## Why It's Built This Way
+## Technical Stack
 
-- **OS Keyring**: API tokens stored in platform keyring (macOS/Windows/Linux) via `setup_tokens.py`. Never stored on disk or in environment files.
-- **Multi-environment**: DEV/STG/PROD environments selectable at runtime — same UI, different Okta orgs.
-- **Local-only**: Runs on `localhost:5002`. No external access, no auth gate needed — this is a local admin tool.
+* **Backend:** Python 3, Flask
+* **Frontend:** Jinja2 templates + minimal CSS
+* **Okta integration:** Direct REST API calls via `okta_client.py`
+* **Token storage:** OS keyring (macOS Keychain / Windows Credential Manager) under service `okta-app-admin`
 
-## Tech Stack
+## Configuration
 
-- Python 3.11+ / Flask (port 5002)
-- Okta API client library
-- OS Keyring (macOS/Windows/Linux) for credential storage
+Tokens are stored in the OS keyring per environment. Run setup once per machine:
 
-## Setup
+```bash
+python setup_tokens.py
+```
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+This prompts for and stores:
 
-2. Configure tokens (stores in OS keyring — you'll need Okta API tokens for each environment):
-   ```bash
-   python setup_tokens.py
-   ```
+* `OKTA_ADMIN_DEV_API_TOKEN`
+* `OKTA_ADMIN_STG_API_TOKEN`
+* `OKTA_ADMIN_PROD_API_TOKEN`
 
-3. Run:
-   ```bash
-   python app.py
-   ```
-   Open http://localhost:5002
+The application's `get_token(var)` helper reads the keyring first and falls back to a `.env` file if the keyring entry is missing.
 
-## Environment Variables
+## Security Conventions
 
-See `.env.example`. All actual tokens must be stored via `setup_tokens.py` — do not put real tokens in `.env`.
+* **Never hardcode tokens.** Token values are kept in OS keyring; `.env` is a fallback for development only.
+* **Pre-filter by app status.** Bulk operations always pre-filter to active apps — Okta's API rejects visibility, policy, and routing changes against deactivated apps with a 403, which is misleading for batch flows.
+* **Backup before edit.** Every file mutation creates `backups/<filename>.bak` first.
 
-## Status
+## Running
 
-Production — v1.0.0. Used alongside `adfs-okta-migration-tool` for the full ADFS → Okta migration workflow.
+```bash
+python app.py
+```
 
-## Related
-
-- [adfs-okta-migration-tool](../adfs-okta-migration-tool) — ADFS → Okta migration tooling; use alongside this dashboard for the full migration workflow.
+Default port: see `app.py` for the Flask binding (typically `5000`).
