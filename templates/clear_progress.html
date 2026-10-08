@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Clear Everyone Group — Live Status</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<style>
+  :root { font-size: 87.5%; }
+  body { padding: 1rem 1.5rem; }
+  header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom: 0.75rem; }
+  header h1 { margin: 0; font-size: 1.25rem; }
+  header .sub { font-size: 0.85em; color: var(--pico-muted-color); }
+  .env-badge {
+    display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+    font-size: 0.78em; font-weight: 700; color: #fff;
+  }
+  .env-dev  { background: #1b6e1b; }
+  .env-stg  { background: #c98a00; }
+  .env-prod { background: #b71c1c; }
+
+  .summary {
+    margin-bottom: 1rem; padding: 0.7rem 0.9rem;
+    border-radius: 6px; background: #f6fbff;
+    border: 1px solid #cfe1ee; font-size: 0.9em;
+  }
+  .summary.done { background: #f0fff4; border-color: #b7ebc0; }
+  .summary .check { color: #1b6e1b; font-weight: 700; }
+
+
+  .final-summary { margin-bottom: 1rem; padding: 0.9rem 1.1rem; border-radius: 8px;
+    background: #f0fff4; border: 1px solid #9ed4a8; font-size: 0.92em; }
+  .final-summary h2 { margin: 0 0 0.5rem 0; font-size: 1rem; color: #1b6e1b; }
+  .final-summary table { font-size: 0.88em; margin-top: 0.4rem; }
+  .final-summary td { padding: 0.25rem 0.5rem; }
+  .final-summary td.key { color: var(--pico-muted-color); font-weight: 600; white-space: nowrap; }
+
+  table { width: 100%; font-size: 0.9em; }
+  th { white-space: nowrap; }
+  td { padding: 0.5rem 0.5rem; vertical-align: top; }
+  td.label { font-weight: 500; }
+  td.id    { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em; color: #666; }
+  td.num   { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  td.status { white-space: nowrap; }
+  .pill {
+    display:inline-flex; align-items:center; padding: 0.1rem 0.55rem;
+    border-radius:999px; font-size:0.78em; border:1px solid #ccc;
+    background:#f0f0f0; color:#333;
+  }
+  .pill.done    { background:#dff5e1; border-color:#9ed4a8; color:#1b6e1b; font-weight:600; }
+  .pill.pruning { background:#fff4d6; border-color:#e6c879; color:#8a5a00; font-weight:600; }
+  .pill.error   { background:#ffe2e2; border-color:#e89a9a; color:#b71c1c; font-weight:600; }
+
+
+  .timeline { display: flex; gap: 0.25rem; margin-top: 0.45rem; max-width: 540px; }
+  .phase {
+    flex: 1; padding: 0.3rem 0.5rem; border-radius: 4px;
+    font-size: 0.74em; line-height: 1.25; min-width: 0;
+    border: 1px solid #ddd; background: #fafafa; color: #888;
+  }
+  .phase.active { background: #fff4d6; border-color: #e6c879; color: #8a5a00; font-weight: 600; }
+  .phase.done   { background: #dff5e1; border-color: #9ed4a8; color: #1b6e1b; }
+  .phase.error  { background: #ffe2e2; border-color: #e89a9a; color: #b71c1c; font-weight: 600; }
+  .phase .name { display: block; font-weight: 600; }
+  .phase .ts   { display: block; font-variant-numeric: tabular-nums; font-size: 0.95em; opacity: 0.85; }
+  .phase .dur  { display: block; font-size: 0.95em; opacity: 0.7; }
+
+  .progress-bar {
+    height: 6px; background: #eee; border-radius: 3px; overflow: hidden;
+    margin-top: 0.35rem; width: 100%; max-width: 540px;
+  }
+  .progress-bar-fill { height: 100%; background: #1b6e1b; transition: width 0.4s ease; }
+  .meta { font-size: 0.78em; color: var(--pico-muted-color); }
+  .deep-status { font-size: 0.82em; margin-top: 0.5rem; border-collapse: collapse;
+    background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 4px;
+    max-width: 640px; }
+  .deep-status td { padding: 0.18rem 0.55rem; border-bottom: 1px solid #eef0f2; }
+  .deep-status tr:last-child td { border-bottom: none; }
+  .deep-status .key { color: #555; width: 200px; font-weight: 500; }
+
+  footer { margin-top: 1.5rem; padding-top: 0.75rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+    font-size: 0.8em; color: var(--pico-muted-color); text-align: center; }
+  footer .counter { font-variant-numeric: tabular-nums; color: #444; }
+  .err { color: #b71c1c; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Clear Everyone Group — Live Status</h1>
+    <div class="sub">Polls every 10s · <span class="env-badge" id="env-badge">—</span> · v{{ version }}</div>
+  </div>
+  <div>
+    <button id="toggle-poll" class="contrast" style="padding:0.3rem 1rem;font-size:0.85em;margin:0">Pause</button>
+  </div>
+</header>
+
+<div id="summary" class="summary">Waiting for first poll…</div>
+
+<div id="final-summary"></div>
+
+<div>
+  <table>
+    <thead>
+      <tr>
+        <th>App / Phase Timeline</th>
+        <th>Groups</th>
+        <th>scope=GROUP</th>
+        <th>scope=USER</th>
+        <th>Status</th>
+        <th>Elapsed</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<footer>
+  Per-app: <code>groups</code> = currently-assigned group count.
+  <code>scope=GROUP</code> = user-assignment shadow records being pruned by Okta's background sync.
+  <code>scope=USER</code> = intentional direct user assignments.
+  Action is complete when groups=0 and all user-assignment counts are 0.
+  <br>
+  <span class="counter" id="page-counter">polls fired: 0</span>
+</footer>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const env = (params.get('env') || 'dev').toLowerCase();
+const appIds = (params.get('app_ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+const started = params.get('started') ? new Date(params.get('started')) : new Date();
+
+document.getElementById('env-badge').textContent = env.toUpperCase();
+document.getElementById('env-badge').className = 'env-badge env-' + env;
+
+const removedParamPresent = params.has('removed');
+const removedFromActionParam = new Set(
+    (params.get('removed') || '').split(',').map(s => s.trim()).filter(Boolean)
+);
+function actionRemovedFromApp(appId) {
+    if (!removedParamPresent) return true;
+    return removedFromActionParam.has(appId);
+}
+
+const history = {};
+appIds.forEach(id => history[id] = []);
+
+const peakTotals = {};
+appIds.forEach(id => peakTotals[id] = 0);
+
+const initialGroupsCount = {};
+
+const stabilityCount = {};
+appIds.forEach(id => stabilityCount[id] = 0);
+const STABILITY_THRESHOLD = 3;
+
+const cappedStableCount = {};
+appIds.forEach(id => cappedStableCount[id] = 0);
+const CAPPED_STABILITY_THRESHOLD = 2;
+
+const quiescenceProbed = {};
+const quiescenceResult = {};
+appIds.forEach(id => { quiescenceProbed[id] = false; });
+
+const DIAG_PROBE_INTERVAL_MS = 30000;
+const diagProbeInFlight = {};
+const lastDiagProbeAt = {};
+const diagProbeHistory = {};
+appIds.forEach(id => {
+    diagProbeInFlight[id] = false;
+    lastDiagProbeAt[id] = 0;
+    diagProbeHistory[id] = [];
+});
+
+const lastGroupSetHash = {};
+
+const phaseState = {};
+appIds.forEach(id => phaseState[id] = {
+    actionAt: started.getTime(),
+    groupRemovedAt: null,
+    peakAt: null,
+    pruneStartedAt: null,
+    completedAt: null,
+    completionMode: null,
+    everSawMorePages: false,
+});
+
+let pollsFired = 0;
+
+let paused = false;
+document.getElementById('toggle-poll').addEventListener('click', () => {
+    if (pollsState && pollsState.stopped) return;
+    paused = !paused;
+    document.getElementById('toggle-poll').textContent = paused ? 'Resume' : 'Pause';
+});
+
+function escHtml(s) {
+    return (s ?? '').toString()
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function fmtElapsed(ms) {
+    if (ms == null || isNaN(ms)) return '—';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (m < 60) return m + 'm ' + r + 's';
+    const h = Math.floor(m / 60);
+    return h + 'h ' + (m % 60) + 'm';
+}
+
+function fmtNum(n) {
+    if (n == null) return '—';
+    return n.toLocaleString();
+}
+
+function fmtClock(ms) {
+    if (ms == null) return '';
+    const d = new Date(ms);
+    return d.toLocaleTimeString([], {hour12: false});
+}
+
+function formatRemainingGroupNames(groupsDetail) {
+    if (!Array.isArray(groupsDetail) || groupsDetail.length === 0) return '—';
+    return groupsDetail.map(g => escHtml(g.name || g.id || '?')).join(', ');
+}
+
+function rateForApp(id, current, morePages) {
+    history[id].push({ts: Date.now(), total: current, morePages: !!morePages});
+    while (history[id].length > 60) history[id].shift();
+    const hist = history[id];
+    if (hist.length < 2) return null;
+    const window = hist.slice(-6);
+    const dts = (window[window.length - 1].ts - window[0].ts) / 1000;
+    if (dts <= 0) return null;
+    const delta = window[0].total - window[window.length - 1].total;
+    if (delta <= 0) return 0;
+    return (delta / dts) * 60;
+}
+
+function updatePhaseState(appId, data, nowMs) {
+    const ps = phaseState[appId];
+    const groups = data.groups_count;
+    const total = data.users_total;
+    const morePages = !!data.users_more_pages;
+    const sg = (data.users_by_scope || {}).GROUP || 0;
+    const su = (data.users_by_scope || {}).USER || 0;
+    if (initialGroupsCount[appId] === undefined) initialGroupsCount[appId] = groups;
+    const removalHappened = actionRemovedFromApp(appId)
+                          || (groups < initialGroupsCount[appId]);
+    const allZero = (sg === 0 && su === 0 && !morePages);
+
+    if (removalHappened && !ps.groupRemovedAt) ps.groupRemovedAt = nowMs;
+    if (groups === 0 && !ps.groupRemovedAt) ps.groupRemovedAt = nowMs;
+    if (total > peakTotals[appId]) {
+        peakTotals[appId] = total;
+        ps.peakAt = nowMs;
+    }
+    if (morePages) ps.everSawMorePages = true;
+    if (groups === 0 && !ps.pruneStartedAt) {
+        const droppedBelowPeak = total < peakTotals[appId];
+        const crossedThreshold = !morePages && ps.everSawMorePages;
+        if (droppedBelowPeak || crossedThreshold) ps.pruneStartedAt = nowMs;
+    }
+    if (removalHappened && groups > 0 && !ps.pruneStartedAt) {
+        if (total < peakTotals[appId] && !morePages) ps.pruneStartedAt = nowMs;
+    }
+
+    const hist = history[appId];
+    if (morePages || hist.length < 2 || hist[hist.length - 1].morePages) {
+        stabilityCount[appId] = 0;
+    } else {
+        const prev = hist[hist.length - 2];
+        if (prev && total === prev.total && !prev.morePages) {
+            stabilityCount[appId]++;
+        } else {
+            stabilityCount[appId] = 0;
+        }
+    }
+
+    const multiGroupSteady = removalHappened && groups > 0
+                             && stabilityCount[appId] >= STABILITY_THRESHOLD
+                             && !morePages;
+    if ((allZero || multiGroupSteady) && !ps.completedAt) {
+        ps.completedAt = nowMs;
+        ps.completionMode = allZero ? 'all_clean' : 'multi_group_steady';
+    }
+
+    const groupSetHash = (data.groups_detail || [])
+        .map(g => g.id).sort().join(',');
+    const prevGroupHash = lastGroupSetHash[appId];
+    lastGroupSetHash[appId] = groupSetHash;
+    const cappedCandidate = removalHappened && morePages && total === 500
+                            && groups > 0 && prevGroupHash === groupSetHash;
+    if (cappedCandidate) {
+        cappedStableCount[appId]++;
+    } else {
+        cappedStableCount[appId] = 0;
+        if (!ps.completedAt) quiescenceProbed[appId] = false;
+    }
+}
+
+function renderTimeline(appId) {
+    const ps = phaseState[appId];
+
+    const p1 = {
+        cls: 'done', name: 'Action fired', ts: fmtClock(ps.actionAt), dur: '',
+    };
+
+    const p2 = ps.groupRemovedAt
+        ? {cls: 'done', name: 'Group removed', ts: fmtClock(ps.groupRemovedAt),
+           dur: '+' + fmtElapsed(ps.groupRemovedAt - ps.actionAt)}
+        : (history[appId].length === 0
+            ? {cls: '', name: 'Group removed', ts: 'pending', dur: ''}
+            : {cls: 'error', name: 'Group still attached', ts: 'check action', dur: ''});
+
+    let p3;
+    if (ps.pruneStartedAt) {
+        const fromGroupRemoval = ps.pruneStartedAt - (ps.groupRemovedAt || ps.actionAt);
+        p3 = {cls: ps.completedAt ? 'done' : 'active',
+              name: 'Pruning started',
+              ts: fmtClock(ps.pruneStartedAt),
+              dur: '+' + fmtElapsed(fromGroupRemoval) + ' after removal'};
+    } else if (ps.completedAt && peakTotals[appId] === 0) {
+        p3 = {cls: 'done', name: 'No prune needed',
+              ts: fmtClock(ps.completedAt),
+              dur: 'count was already 0'};
+    } else if (ps.completedAt
+               && (ps.completionMode === 'multi_group_steady_above_cap'
+                   || ps.completionMode === 'multi_group_steady')) {
+        const subtext = ps.completionMode === 'multi_group_steady_above_cap'
+            ? 'confirmed via math signal (above 500-cap)'
+            : 'count was already at steady-state group membership';
+        p3 = {cls: 'done', name: 'Steady state confirmed',
+              ts: fmtClock(ps.completedAt),
+              dur: subtext};
+    } else if (ps.groupRemovedAt) {
+        p3 = {cls: 'active', name: 'Awaiting prune', ts: 'pending', dur: 'Okta backfill draining'};
+    } else {
+        p3 = {cls: '', name: 'Awaiting prune', ts: '', dur: ''};
+    }
+
+    let p4;
+    if (ps.completedAt) {
+        const totalElapsed = ps.completedAt - ps.actionAt;
+        p4 = {cls: 'done', name: 'Complete', ts: fmtClock(ps.completedAt),
+              dur: 'total ' + fmtElapsed(totalElapsed)};
+    } else {
+        p4 = {cls: '', name: 'Complete', ts: '', dur: ''};
+    }
+
+    const phases = [p1, p2, p3, p4];
+    return `<div class="timeline">${
+        phases.map(p => `
+          <div class="phase ${p.cls}">
+            <span class="name">${escHtml(p.name)}</span>
+            <span class="ts">${escHtml(p.ts)}</span>
+            <span class="dur">${escHtml(p.dur)}</span>
+          </div>`).join('')
+    }</div>`;
+}
+
+function renderRow(appId, data, nowMs) {
+    if (data.error) {
+        return `<tr>
+            <td class="label">${escHtml(appId)}</td>
+            <td colspan="5" class="err">error: ${escHtml(data.error)}</td>
+        </tr>`;
+    }
+    updatePhaseState(appId, data, nowMs);
+
+    const groups = data.groups_count;
+    const total = data.users_total;
+    const morePages = !!data.users_more_pages;
+    const byScope = data.users_by_scope || {};
+    const sg = byScope.GROUP || 0;
+    const su = byScope.USER || 0;
+    const peak = peakTotals[appId];
+    const sgDisp = morePages ? `${fmtNum(sg)}+` : fmtNum(sg);
+    const peakDisp = (peak >= 500 && phaseState[appId].everSawMorePages) ? `${fmtNum(peak)}+` : fmtNum(peak);
+
+    const hist = history[appId];
+    let trend = 'flat';
+    if (hist.length >= 2) {
+        const prev = hist[hist.length - 2].total;
+        const curr = hist[hist.length - 1].total;
+        if (curr > prev) trend = 'up';
+        else if (curr < prev) trend = 'down';
+    }
+
+    const rate = rateForApp(appId, total, morePages);
+    const removalHappened = actionRemovedFromApp(appId)
+                          || ((initialGroupsCount[appId] !== undefined) &&
+                              (groups < initialGroupsCount[appId]));
+    const multiGroupSteady = removalHappened && groups > 0 &&
+                             stabilityCount[appId] >= STABILITY_THRESHOLD && !morePages;
+    let statusPill, meta = '';
+    const allClean = (groups === 0 && sg === 0 && su === 0 && !morePages);
+    const aboveCapSteady = phaseState[appId].completionMode === 'multi_group_steady_above_cap';
+    if (allClean) {
+        statusPill = '<span class="pill done">Complete</span>';
+    } else if (multiGroupSteady) {
+        statusPill = '<span class="pill done">Complete · other group(s) remain</span>';
+        const namesStr = formatRemainingGroupNames(data.groups_detail);
+        meta = `<div class="meta">Everyone-orphans pruned; ${fmtNum(sg)} record(s) backed by ${namesStr}</div>`;
+    } else if (aboveCapSteady) {
+        const q = quiescenceResult[appId] || {};
+        const namesStr = formatRemainingGroupNames(data.groups_detail);
+        statusPill = '<span class="pill done">Complete · group(s) remain</span>';
+        const fc = q.final_count != null ? fmtNum(q.final_count) : '≥500';
+        const gm = q.group_member_total;
+        let validationLine = '';
+        if (gm != null && q.final_count != null) {
+            const matches = (gm === q.final_count);
+            validationLine = matches
+                ? ` · matches ${fmtNum(gm)} ${namesStr} members ✓`
+                : ` · ${fmtNum(gm)} ${namesStr} members (mismatch — investigate)`;
+        }
+        meta = `<div class="meta">Validated: ${fc} records backed by ${namesStr}${validationLine}</div>`;
+    } else if (removalHappened && groups > 0) {
+        const everyoneStillAttached = (data.groups_detail || []).some(
+            g => g.name === 'Everyone' && g.type === 'BUILT_IN'
+        );
+        if (everyoneStillAttached) {
+            statusPill = '<span class="pill error">Everyone re-attached</span>';
+            const namesStr = formatRemainingGroupNames(data.groups_detail);
+            meta = `<div class="meta">Action was successful previously, but Everyone is currently attached again. Re-run Clear Everyone Group to prune. Groups: ${namesStr}</div>`;
+        } else if (cappedStableCount[appId] >= CAPPED_STABILITY_THRESHOLD && morePages && total === 500) {
+            statusPill = '<span class="pill pruning">Confirming steady state…</span>';
+            const probeStatus = quiescenceProbed[appId]
+                ? (quiescenceResult[appId] ? 'received probe result, evaluating' : 'probing Okta system log + paginating records')
+                : 'fetching';
+            meta = `<div class="meta">Count pinned at 500 for ${Math.min(cappedStableCount[appId], CAPPED_STABILITY_THRESHOLD)}+/${CAPPED_STABILITY_THRESHOLD} polls · ${probeStatus}</div>`;
+        } else {
+            statusPill = '<span class="pill pruning">Pruning</span>';
+            const namesStr = formatRemainingGroupNames(data.groups_detail);
+            meta = `<div class="meta">Everyone-orphans draining; ${groups} other group(s) still attached: ${namesStr}</div>`;
+        }
+    } else if (groups > 0) {
+        statusPill = '<span class="pill error">Group still attached</span>';
+    } else if (morePages) {
+        statusPill = '<span class="pill pruning">Pruning</span>';
+        meta = `<div class="meta">500+ records remaining · exact count + ETA when below 500</div>`;
+    } else if (trend === 'up') {
+        statusPill = '<span class="pill pruning">Backfill draining</span>';
+        meta = `<div class="meta">Okta still adding records · peak ${peakDisp}</div>`;
+    } else if (trend === 'down' && sg > 0) {
+        statusPill = '<span class="pill pruning">Pruning</span>';
+        if (rate != null && rate > 0) {
+            const etaMin = sg / rate;
+            meta = `<div class="meta">~${rate.toFixed(0)}/min · ETA ~${etaMin < 1 ? '<1' : Math.ceil(etaMin)}m · peak ${peakDisp}</div>`;
+        }
+    } else {
+        statusPill = '<span class="pill pruning">Waiting</span>';
+        meta = peak > 0 ? `<div class="meta">peak so far ${peakDisp}</div>` : '';
+    }
+
+    let progressBar = '';
+    const showProgress = peak > 0 && !phaseState[appId].completedAt
+                       && (groups === 0 || actionRemovedFromApp(appId));
+    if (showProgress) {
+        const pruned = Math.max(0, peak - sg);
+        const pct = (pruned / peak) * 100;
+        if (pct > 0) {
+            progressBar = `<div class="progress-bar" title="${fmtNum(pruned)} of ${fmtNum(peak)} pruned"><div class="progress-bar-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+        }
+    }
+
+    const elapsed = fmtElapsed(nowMs - started.getTime());
+
+    let deepStatus = '';
+    const q = quiescenceResult[appId];
+    if (q && !allClean) {
+        const probeAge = lastDiagProbeAt[appId]
+            ? Math.round((nowMs - lastDiagProbeAt[appId]) / 1000)
+            : null;
+        let etaStr = '—';
+        const hist = diagProbeHistory[appId] || [];
+        if (hist.length >= 2) {
+            const a = hist[hist.length - 2], b = hist[hist.length - 1];
+            const deltaMin = (b.ts - a.ts) / 60000;
+            const ratePerMin = deltaMin > 0 ? (a.final_count - b.final_count) / deltaMin : 0;
+            if (ratePerMin > 0) {
+                const etaMin = b.final_count / ratePerMin;
+                etaStr = `~${etaMin < 1 ? '<1' : Math.ceil(etaMin)}m <span class="meta">(${Math.round(ratePerMin)}/min observed)</span>`;
+            } else if (b.final_count === 0) {
+                etaStr = 'done';
+            } else {
+                etaStr = '<span class="meta">no descent observed last interval</span>';
+            }
+        }
+        const removesNote = q.removes === 0
+            ? '0 <span class="meta">(Okta pruner quiet)</span>'
+            : `${q.removes}+ <span class="meta">(Okta pruning active)</span>`;
+        const groupsNote = (q.group_member_total != null)
+            ? `${groups} attached <span class="meta">(${groupNamesShort(data.groups_detail)} — ${fmtNum(q.group_member_total)} members)</span>`
+            : (groups === 0
+                ? `0 <span class="meta">— pure orphan drain, no steady-state group</span>`
+                : `${fmtNum(groups)} attached`);
+        const ageStr = probeAge != null
+            ? `<span class="meta">refreshed ${probeAge}s ago · next in ${Math.max(0, Math.round((DIAG_PROBE_INTERVAL_MS - (nowMs - lastDiagProbeAt[appId])) / 1000))}s</span>`
+            : '';
+        deepStatus = `
+            <table class="deep-status">
+                <tr><td class="key">Action fired</td><td>${fmtClock(phaseState[appId].actionAt)} <span class="meta">local time</span></td></tr>
+                <tr><td class="key">Real records remaining</td><td><strong>${fmtNum(q.final_count)}</strong> ${(data.users_more_pages && q.final_count > 500) ? '<span class="meta">(page-cap was 500+)</span>' : ''}</td></tr>
+                <tr><td class="key">Groups attached</td><td>${groupsNote}</td></tr>
+                <tr><td class="key">Remove events (last 5 min)</td><td>${removesNote}</td></tr>
+                <tr><td class="key">ETA</td><td>${etaStr}</td></tr>
+                <tr><td class="key"></td><td>${ageStr}</td></tr>
+            </table>`;
+    }
+
+    return `<tr>
+        <td>
+            <div class="label">${escHtml(data.label || appId)}</div>
+            <div class="id">${escHtml(appId)}</div>
+            ${renderTimeline(appId)}
+            ${progressBar}
+            ${deepStatus}
+        </td>
+        <td class="num">${fmtNum(groups)}</td>
+        <td class="num">${sgDisp}${peak > sg ? ` <span class="meta">peak ${peakDisp}</span>` : ''}</td>
+        <td class="num">${fmtNum(su)}</td>
+        <td class="status">${statusPill}${meta}</td>
+        <td class="num">${elapsed}</td>
+    </tr>`;
+}
+
+function groupNamesShort(detail) {
+    if (!Array.isArray(detail) || detail.length === 0) return '—';
+    return detail.map(g => escHtml(g.name || g.id)).join(', ');
+}
+
+function renderSummary(states, allDone) {
+    const ok = Object.values(states).filter(s => !s.error).length;
+    const errs = Object.values(states).filter(s => s.error).length;
+    const remaining = Object.entries(states).reduce((acc, [id, s]) => {
+        if (s.error) return acc;
+        return acc + (s.users_by_scope?.GROUP || 0) + (s.users_by_scope?.USER || 0);
+    }, 0);
+    const anyMorePages = Object.values(states).some(s => s && s.users_more_pages);
+    const remainingDisp = anyMorePages ? `${fmtNum(remaining)}+` : fmtNum(remaining);
+    const div = document.getElementById('summary');
+    if (allDone) {
+        div.className = 'summary done';
+        div.innerHTML = `<span class="check">✓</span> All ${ok} app(s) cleaned. Polling stopped.`;
+    } else {
+        div.className = 'summary';
+        div.innerHTML = `Watching ${ok} app(s). <strong>${remainingDisp}</strong> total user assignments remaining. ` +
+            (errs ? `<span class="err">${errs} error(s).</span> ` : '');
+    }
+}
+
+function renderFinalSummary(states) {
+    const rows = appIds.map(id => {
+        const ps = phaseState[id];
+        const label = (states[id] && states[id].label) || id;
+        const totalElapsed = ps.completedAt - ps.actionAt;
+        const groupRemovalDelay = ps.groupRemovedAt - ps.actionAt;
+        const sawMorePages = !!ps.everSawMorePages;
+        const descentDuration = ps.pruneStartedAt && ps.completedAt
+            ? (ps.completedAt - ps.pruneStartedAt) : null;
+        const descentRecords = peakTotals[id];
+        const descentRate = (descentDuration && descentDuration > 0)
+            ? Math.round((descentRecords / (descentDuration / 1000)) * 60)
+            : null;
+        const peakRow = sawMorePages
+            ? `${fmtNum(descentRecords)}+ <span class="meta">(observation capped at 500 — real peak higher)</span>`
+            : fmtNum(descentRecords);
+        const descentLabel = sawMorePages
+            ? `Final-descent rate <span class="meta">(last 500 records visible to page; rate above the 500-record threshold is opaque to Okta clients)</span>`
+            : `Prune rate`;
+        const descentValue = descentRate != null
+            ? `~${fmtNum(descentRate)}/min ${sawMorePages ? `<span class="meta">over the ${fmtElapsed(descentDuration)} below-500 descent</span>` : ''}`
+            : '—';
+        const visibleCleanedRow = sawMorePages
+            ? `≥500 <span class="meta">(visible portion; real total = peak observed before crossing threshold, which the page couldn't measure exactly)</span>`
+            : `${fmtNum(descentRecords)}`;
+        const pruningStartedRow = ps.pruneStartedAt
+            ? `${fmtClock(ps.pruneStartedAt)} ${sawMorePages
+                ? `<span class="meta">(${fmtElapsed(ps.pruneStartedAt - ps.groupRemovedAt)} after group removal — when count crossed below 500 and became visible)</span>`
+                : `<span class="meta">(${fmtElapsed(ps.pruneStartedAt - ps.groupRemovedAt)} after group removal)</span>`}`
+            : 'never observed — count was already at 0';
+        const finalState = states[id] || {};
+        const remainingGroupsRow = (finalState.groups_count > 0 && Array.isArray(finalState.groups_detail) && finalState.groups_detail.length > 0)
+            ? `<tr><td class="key">Remaining groups</td><td>${
+                finalState.groups_detail.map(g => `${escHtml(g.name || g.id)} <span class="meta">(${escHtml(g.type || '?')})</span>`).join(', ')
+              }</td></tr>`
+            : '';
+
+        let validationRows = '';
+        if (ps.completionMode === 'multi_group_steady_above_cap') {
+            const q = quiescenceResult[id] || {};
+            const mathMatches = (q.group_member_total != null && q.final_count === q.group_member_total);
+            const logSilent = (q.removes === 0);
+            const signal = mathMatches
+                ? `math match <span class="meta">(final_count === group_member_total — proves zero orphans)</span>`
+                : logSilent
+                    ? `system-log silent <span class="meta">(0 removes in last 5 min)</span>`
+                    : `<span class="meta">(neither signal fired — investigate)</span>`;
+            const matchTag = q.group_member_total == null
+                ? ''
+                : mathMatches
+                    ? ` <span class="meta">✓ matches ${fmtNum(q.group_member_total)} group member(s) exactly</span>`
+                    : ` <span class="meta" style="color:#a40">⚠ does not match group member count (${fmtNum(q.group_member_total)})</span>`;
+            const removesNote = logSilent
+                ? '0 <span class="meta">(Okta pruner quiet)</span>'
+                : mathMatches
+                    ? `${q.removes}+ <span class="meta">(background activity present, but math confirms zero orphans)</span>`
+                    : `${q.removes}+ <span class="meta">(pruning still active)</span>`;
+            validationRows = `
+                <tr><td class="key">Completion signal</td><td>${signal}</td></tr>
+                <tr><td class="key">Final count (full pagination)</td><td>${fmtNum(q.final_count)} records${matchTag}</td></tr>
+                <tr><td class="key">Remove events (last 5 min)</td><td>${removesNote}</td></tr>
+            `;
+        }
+        return `
+            <tr><td class="key" colspan="2"><strong>${escHtml(label)}</strong></td></tr>
+            <tr><td class="key">Action fired</td><td>${fmtClock(ps.actionAt)}</td></tr>
+            <tr><td class="key">Group removed</td><td>${fmtClock(ps.groupRemovedAt)} (+${fmtElapsed(groupRemovalDelay)})</td></tr>
+            <tr><td class="key">Below 500 (visible)</td><td>${pruningStartedRow}</td></tr>
+            <tr><td class="key">Complete</td><td>${fmtClock(ps.completedAt)}</td></tr>
+            <tr><td class="key">Total elapsed</td><td>${fmtElapsed(totalElapsed)}</td></tr>
+            <tr><td class="key">Observed peak</td><td>${peakRow}</td></tr>
+            <tr><td class="key">Visible records cleaned</td><td>${visibleCleanedRow}</td></tr>
+            <tr><td class="key">${descentLabel}</td><td>${descentValue}</td></tr>
+            ${remainingGroupsRow}
+            ${validationRows}
+        `;
+    }).join('<tr><td colspan="2" style="border-top:1px solid #cce5d3"></td></tr>');
+
+    const html = `
+        <div class="final-summary">
+            <h2>✓ All apps complete</h2>
+            <p class="meta" style="margin: 0 0 0.5rem 0">
+                Note: when an app's record count was ever ≥500, the page could only directly observe
+                the final descent below the 500-record threshold. Peak / cleaned / rate values below
+                describe that <strong>visible portion only</strong>. Okta's bulk prune above the threshold
+                ran in the background; its duration is captured in the "Total elapsed" line.
+            </p>
+            <table>${rows}</table>
+        </div>`;
+    document.getElementById('final-summary').innerHTML = html;
+}
+
+const BASE_INTERVAL_MS = 10000;
+const DONE_INTERVAL_MS = 60000;
+const BACKOFF_FLOOR_MS = 30000;
+const BACKOFF_CEIL_MS  = 300000;
+const pollsState = {timer: null, stopped: false, consecErrors: 0};
+let allDone = false;
+
+function nextIntervalMs() {
+    if (pollsState.consecErrors > 0) {
+        const m = BACKOFF_FLOOR_MS * Math.pow(2, pollsState.consecErrors - 1);
+        return Math.min(m, BACKOFF_CEIL_MS);
+    }
+    return allDone ? DONE_INTERVAL_MS : BASE_INTERVAL_MS;
+}
+
+function schedule() {
+    if (pollsState.timer) clearTimeout(pollsState.timer);
+    pollsState.timer = setTimeout(poll, nextIntervalMs());
+}
+
+function showError(msg) {
+    const next = Math.round(nextIntervalMs() / 1000);
+    const div = document.getElementById('summary');
+    div.className = 'summary';
+    div.innerHTML = `<span class="err">${escHtml(msg)}</span> · retrying in ${next}s (backoff #${pollsState.consecErrors})`;
+}
+
+function renderFinalAllDone(states) {
+    if (pollsState.timer) { clearTimeout(pollsState.timer); pollsState.timer = null; }
+    pollsState.stopped = true;
+    const now = Date.now();
+    const rows = {...states};
+    delete rows._meta;
+    appIds.forEach(id => {
+        if (!phaseState[id].completedAt) phaseState[id].completedAt = now;
+        if (!phaseState[id].groupRemovedAt) phaseState[id].groupRemovedAt = now;
+    });
+    const rowsHtml = appIds.map(id => renderRow(id, rows[id] || {error: 'no data'}, now)).join('');
+    document.getElementById('rows').innerHTML = rowsHtml;
+    document.getElementById('summary').className = 'summary done';
+    document.getElementById('summary').innerHTML = '<span class="check">✓</span> All apps clean. Polling stopped — refresh to resume watching.';
+    renderFinalSummary(rows);
+    const btn = document.getElementById('toggle-poll');
+    btn.textContent = 'Stopped';
+    btn.disabled = true;
+}
+
+async function poll() {
+    if (paused) { schedule(); return; }
+    if (appIds.length === 0) {
+        document.getElementById('summary').innerHTML = '<span class="err">No app_ids in URL.</span>';
+        return;
+    }
+    pollsFired++;
+    document.getElementById('page-counter').textContent = `polls fired: ${pollsFired}`;
+    try {
+        const resp = await fetch('/api/clear-progress/status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({env, app_ids: appIds})
+        });
+        if (resp.status === 410) {
+            const data = await resp.json().catch(() => ({}));
+            renderFinalAllDone(data);
+            return;
+        }
+        if (!resp.ok) {
+            pollsState.consecErrors++;
+            showError(`HTTP ${resp.status}`);
+            schedule();
+            return;
+        }
+        const states = await resp.json();
+        const now = Date.now();
+        const rateLimited = resp.headers.get('X-Rate-Limited') === '1' ||
+                            (states._meta && states._meta.rate_limited) ||
+                            Object.values(states).some(s => s && s.rate_limited);
+        if (rateLimited) {
+            pollsState.consecErrors++;
+            const stateRows = {...states}; delete stateRows._meta;
+            const rowsHtml = appIds.map(id => renderRow(id, stateRows[id] || {error: 'no data'}, now)).join('');
+            document.getElementById('rows').innerHTML = rowsHtml;
+            showError('rate-limited by Okta');
+            schedule();
+            return;
+        }
+        pollsState.consecErrors = 0;
+        const stateRows = {...states}; delete stateRows._meta;
+        const rowsHtml = appIds.map(id => renderRow(id, stateRows[id] || {error: 'no data'}, now)).join('');
+        document.getElementById('rows').innerHTML = rowsHtml;
+
+        for (const aid of appIds) {
+            const s = stateRows[aid];
+            if (!s || s.error) continue;
+            const ps = phaseState[aid];
+            if (ps.completedAt) continue;
+            if (quiescenceProbed[aid]) continue;
+            if (cappedStableCount[aid] < CAPPED_STABILITY_THRESHOLD) continue;
+            quiescenceProbed[aid] = true;
+            (async () => {
+                try {
+                    const qr = await fetch('/api/clear-progress/log-quiescence', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        credentials: 'same-origin',
+                        body: JSON.stringify({env, app_id: aid, minutes: 5})
+                    });
+                    if (!qr.ok) {
+                        quiescenceProbed[aid] = false;
+                        return;
+                    }
+                    const q = await qr.json();
+                    quiescenceResult[aid] = q;
+                    const logSilent = (q.removes === 0);
+                    const mathMatches = (q.group_member_total != null
+                                         && q.final_count === q.group_member_total);
+                    if (logSilent || mathMatches) {
+                        const psNow = phaseState[aid];
+                        psNow.completedAt = Date.now();
+                        psNow.completionMode = 'multi_group_steady_above_cap';
+                    } else {
+                        cappedStableCount[aid] = 0;
+                        quiescenceProbed[aid] = false;
+                    }
+                } catch (e) {
+                    quiescenceProbed[aid] = false;
+                }
+            })();
+        }
+
+        for (const aid of appIds) {
+            const s = stateRows[aid];
+            if (!s || s.error) continue;
+            if (phaseState[aid].completedAt) continue;
+            if (diagProbeInFlight[aid]) continue;
+            if ((Date.now() - lastDiagProbeAt[aid]) < DIAG_PROBE_INTERVAL_MS) continue;
+            diagProbeInFlight[aid] = true;
+            (async () => {
+                try {
+                    const qr = await fetch('/api/clear-progress/log-quiescence', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        credentials: 'same-origin',
+                        body: JSON.stringify({env, app_id: aid, minutes: 5})
+                    });
+                    if (qr.ok) {
+                        const q = await qr.json();
+                        quiescenceResult[aid] = q;
+                        lastDiagProbeAt[aid] = Date.now();
+                        diagProbeHistory[aid].push({
+                            ts: lastDiagProbeAt[aid],
+                            final_count: q.final_count,
+                            removes: q.removes,
+                        });
+                        if (diagProbeHistory[aid].length > 5) {
+                            diagProbeHistory[aid].shift();
+                        }
+                    }
+                } catch (e) {
+                } finally {
+                    diagProbeInFlight[aid] = false;
+                }
+            })();
+        }
+
+        allDone = appIds.every(id => {
+            const s = stateRows[id];
+            if (!s || s.error) return false;
+            const allClean = s.groups_count === 0
+                          && (s.users_by_scope?.GROUP || 0) === 0
+                          && (s.users_by_scope?.USER || 0) === 0
+                          && !s.users_more_pages;
+            const removalHappened = actionRemovedFromApp(id)
+                                  || ((initialGroupsCount[id] !== undefined)
+                                      && (s.groups_count < initialGroupsCount[id]));
+            const multiGroupSteady = removalHappened
+                                  && s.groups_count > 0
+                                  && stabilityCount[id] >= STABILITY_THRESHOLD
+                                  && !s.users_more_pages;
+            const aboveCapSteady = phaseState[id].completionMode === 'multi_group_steady_above_cap';
+            return allClean || multiGroupSteady || aboveCapSteady;
+        });
+        renderSummary(stateRows, allDone);
+        if (allDone) {
+            renderFinalAllDone(states);
+            return;
+        }
+        schedule();
+    } catch (e) {
+        pollsState.consecErrors++;
+        showError(e.message || String(e));
+        schedule();
+    }
+}
+
+poll();
+</script>
+</body>
+</html>
