@@ -33,3 +33,14 @@ A `Dockerfile` is included (gunicorn on port 8080, runs as a non-root arbitrary 
 ## Notes
 This tool **writes** to Okta when you click an action. Use a token scoped to what you
 need, and try changes against a non-production org first.
+
+## Known limitations
+- **It writes to Okta.** Every action button changes the org immediately — there is no
+  dry-run mode and no undo. The action log records what was done, not how to reverse it.
+- **The sign-in gate is off when OIDC isn't configured.** With the `OIDC_*` variables
+  unset, anyone who can reach the port can use the tool. Never deploy it that way.
+- **TLS verification is disabled for the optional auth-count data source** (Azure Tables),
+  to work behind a TLS-inspecting proxy. Okta API calls verify certificates normally.
+- **One API token per org, with whatever rights that token has.** There is no per-user
+  authorization inside the tool.
+- **No automated tests.**
