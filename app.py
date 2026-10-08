@@ -200,7 +200,7 @@ LOGIN_HTML = """<!doctype html>
  <a class="btn" href="/oidc/login">Sign in</a>
  {% if error %}
    {% if 'access_denied' in error %}
-   <div class="vpn"><b></b> This app is restricted to the internal network. Connect to the VPN client, then click Sign in again.<span class="raw">{{ error }}</span></div>
+   <div class="vpn">This app is restricted to the internal network. Connect to the VPN client, then click Sign in again.<span class="raw">{{ error }}</span></div>
    {% else %}<div class="err">{{ error }}</div>{% endif %}
  {% endif %}
 </div>
