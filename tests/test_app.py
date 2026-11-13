@@ -117,6 +117,18 @@ def test_write_from_same_site_reaches_handler(client):
     assert resp.status_code == 400
 
 
+def test_toggle_with_malformed_id_is_400_with_message(client, monkeypatch):
+    def fake_client(env):
+        session = requests.Session()
+        return app_module.OktaClient("https://okta.invalid", "test-key-not-real", session), None
+
+    monkeypatch.setattr(app_module, "_client", fake_client)
+    body = {"action": "deactivate", "app_id": "a/b"}
+    resp = client.post("/api/toggle-status", json=body, headers=SAME_SITE)
+    assert resp.status_code == 400
+    assert "invalid Okta id" in resp.get_json()["error"]
+
+
 def test_unknown_env_is_400(client):
     resp = client.get("/api/apps?env=nope")
     assert resp.status_code == 400
