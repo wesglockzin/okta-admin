@@ -25,6 +25,10 @@ APP_SIGN_ON_MODES = {
 }
 
 
+class InvalidOktaId(ValueError):
+    """An Okta object id that is not plain alphanumerics."""
+
+
 class OktaClient:
     def __init__(self, base_url: str, api_token: str, session: requests.Session):
         self.base_url = base_url.rstrip("/")
@@ -569,7 +573,7 @@ class OktaClient:
     @staticmethod
     def _safe_id(value: str) -> str:
         if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9]+", value):
-            raise ValueError(f"invalid Okta id: {value!r}")
+            raise InvalidOktaId(f"invalid Okta id: {value!r}")
         return value
 
     def deactivate_app(self, app_id: str) -> None:

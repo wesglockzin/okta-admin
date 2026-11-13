@@ -193,6 +193,19 @@ def test_route_error_hides_raw_exception_text(client, monkeypatch, caplog):
     assert "internal-detail-with-token" in caplog.text
 
 
+class InvalidUrlOkta:
+    def activate_app(self, app_id):
+        raise requests.exceptions.InvalidURL("https://org.example.test/bad host")
+
+
+def test_toggle_requests_valueerror_is_not_echoed_as_400(client, monkeypatch):
+    monkeypatch.setattr(app_module, "_client", lambda env: (InvalidUrlOkta(), None))
+    body = {"action": "activate", "app_id": "a1"}
+    resp = client.post("/api/toggle-status", json=body, headers=SAME_SITE)
+    assert resp.status_code == 502
+    assert "org.example.test" not in resp.get_data(as_text=True)
+
+
 def test_sp_vendor_detection():
     detect = app_module._detect_sp_vendor
     shib = {"acs_url": "https://x.example.test/Shibboleth.sso/SAML2/POST"}

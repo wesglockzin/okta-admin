@@ -25,7 +25,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from guards import is_allowed, origin_ok, safe_next
 from howto import register_howto
-from okta_client import OktaClient
+from okta_client import InvalidOktaId, OktaClient
 from settings import ConfigError, auth_settings, load_orgs
 
 
@@ -487,8 +487,8 @@ def api_toggle_status():
             client.deactivate_app(app_id)
         _log_action(env, action.upper(), app_id, "ok")
         return jsonify({"status": "ACTIVE" if action == "activate" else "INACTIVE"})
-    except ValueError as e:
-        # Input validation (for example a malformed id): safe to show the caller.
+    except InvalidOktaId as e:
+        # Input validation (a malformed id): safe to show the caller.
         return jsonify({"error": str(e)}), 400
     except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
         msg = _fail(e, f"{action} app {app_id}")
