@@ -62,4 +62,4 @@ Behind a reverse proxy, the proxy must forward `X-Forwarded-Host` and
 - **CSRF protection is an Origin/Referer check** on every write request.
 - **Dependencies are range-pinned but there is no lockfile yet.**
 - **The action log is a local file** and is not shared between containers.
-- **Many error messages still return raw upstream error text to the browser.**
+- **Errors shown in the browser are generic** (for example "Okta returned 403"). The status and a truncated upstream body are written to the server log.

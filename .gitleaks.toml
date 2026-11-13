@@ -1,0 +1,34 @@
+title = "okta-admin gitleaks rules"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "private-ip-address"
+description = "Private (RFC 1918) IP address"
+regex = '''\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b'''
+tags = ["sanitization"]
+
+[[rules]]
+id = "internal-hostname"
+description = "Internal hostname suffix"
+regex = '''(?i)\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:internal|corp|intranet|lan|local)\b'''
+tags = ["sanitization"]
+
+[[rules]]
+id = "container-registry-name"
+description = "Private container registry host"
+regex = '''(?i)\b[a-z0-9-]+\.(?:azurecr\.io|dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com)\b'''
+tags = ["sanitization"]
+
+[[rules]]
+id = "okta-org-hostname"
+description = "A real Okta org host name (placeholders are allowlisted below)"
+regex = '''(?i)\b[a-z0-9-]+\.(?:okta|oktapreview)\.com\b'''
+tags = ["sanitization"]
+
+[[allowlists]]
+description = "Placeholder Okta host in the settings example"
+condition = "AND"
+paths = ['''^\.env\.example$''']
+regexes = ['''your-org\.okta\.com''']

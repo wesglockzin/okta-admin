@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py guards.py okta_client.py settings.py shared_http.py shared_docs.py HOWTO.md ./
+COPY app.py guards.py okta_client.py settings.py howto.py HOWTO.md ./
 COPY templates ./templates
 
 RUN chown -R appuser:appuser /app

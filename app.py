@@ -24,10 +24,21 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from guards import is_allowed, origin_ok, safe_next
+from howto import register_howto
 from okta_client import OktaClient
 from settings import ConfigError, auth_settings, load_orgs
-from shared_docs import register_howto
-from shared_http import make_session
+
+
+def make_session(tool_name: str, tool_version: str) -> requests.Session:
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": f"{tool_name}/{tool_version}",
+            "Accept": "application/json",
+        }
+    )
+    return session
+
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -69,6 +80,26 @@ def _log_action(
         outcome[:10],
         detail,
     )
+
+
+def _fail(exc: Exception, context: str) -> str:
+    """Log an error with full detail on the server; return a client-safe message.
+
+    An Okta HTTP error is logged with its status and a truncated body. Clients
+    only ever see the status, never the upstream body or raw exception text.
+    """
+    resp = getattr(exc, "response", None)
+    if isinstance(exc, requests.HTTPError) and resp is not None:
+        log.warning(
+            "%s: Okta returned HTTP %s: %s",
+            context,
+            resp.status_code,
+            (resp.text or "")[:500],
+            exc_info=True,
+        )
+        return f"Okta returned {resp.status_code}"
+    log.warning("%s failed: %s", context, exc, exc_info=True)
+    return "Request failed; see the server log"
 
 
 try:
@@ -124,7 +155,7 @@ if AZURE_STORAGE_CONNECTION_STRING:
         )
         _units_table = _tbl_svc.get_table_client(TABLE_UNITS)
         log.info("Auth-count source: enabled (table %s)", TABLE_UNITS)
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional source; logged, counts fall back to 0
         log.exception("Failed to init Azure Tables client; auth counts will be 0")
         _units_table = None
 else:
@@ -151,7 +182,7 @@ def _get_auth_counts(env: str) -> tuple[dict[str, int], dict[str, int]]:
                 by_client[client_id] = by_client.get(client_id, 0) + count
             elif unit:
                 by_label[unit] = by_label.get(unit, 0) + count
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional source; logged, counts fall back to 0
         log.exception("[%s] auth-count fetch failed", env)
     return by_client, by_label
 
@@ -320,7 +351,7 @@ def oidc_callback():
         return redirect(url_for("login"))
     try:
         token = oauth.okta.authorize_access_token()
-    except Exception:
+    except Exception:  # noqa: BLE001 - login boundary; logged, user sees a fixed message
         log.exception("OIDC token exchange failed")
         session["login_error"] = "token exchange failed"
         return redirect(url_for("login"))
@@ -398,8 +429,8 @@ def api_apps():
             )
         result.sort(key=lambda x: x["label"].lower())
         return jsonify(result)
-    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify({"error": _fail(e, f"list apps ({env})")}), 502
 
 
 @app.route("/api/policies")
@@ -410,8 +441,8 @@ def api_policies():
         return err
     try:
         return jsonify(client.list_access_policies())
-    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify({"error": _fail(e, f"list policies ({env})")}), 502
 
 
 @app.route("/api/routing-rules")
@@ -432,8 +463,8 @@ def api_routing_rules():
                     }
                 )
         return jsonify(rules)
-    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify({"error": _fail(e, f"list routing rules ({env})")}), 502
 
 
 @app.route("/api/toggle-status", methods=["POST"])
@@ -456,9 +487,10 @@ def api_toggle_status():
             client.deactivate_app(app_id)
         _log_action(env, action.upper(), app_id, "ok")
         return jsonify({"status": "ACTIVE" if action == "activate" else "INACTIVE"})
-    except Exception as e:  # noqa: BLE001 - route boundary, failure logged and returned
-        _log_action(env, action.upper(), app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"{action} app {app_id}")
+        _log_action(env, action.upper(), app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 502
 
 
 @app.route("/api/assign-policy", methods=["POST"])
@@ -480,9 +512,9 @@ def api_assign_policy():
             client.assign_policy_to_app(aid, policy_id)
             results[aid] = "ok"
             _log_action(env, "POLICY", aid, "ok", f"policy={policy_id}")
-        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
-            results[aid] = str(e)
-            _log_action(env, "POLICY", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = _fail(e, f"assign policy to {aid}")
+            _log_action(env, "POLICY", aid, "FAILED", results[aid])
     return jsonify(results)
 
 
@@ -510,9 +542,9 @@ def api_assign_routing_rule():
                 client.add_app_to_routing_rule(rule_policy_id, rule_id, aid)
             results[aid] = "ok"
             _log_action(env, f"ROUTING-{action.upper()}", aid, "ok", f"rule={rule_id}")
-        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
-            results[aid] = str(e)
-            _log_action(env, f"ROUTING-{action.upper()}", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = _fail(e, f"routing rule {action} for {aid}")
+            _log_action(env, f"ROUTING-{action.upper()}", aid, "FAILED", results[aid])
     return jsonify(results)
 
 
@@ -531,9 +563,10 @@ def api_rename():
         client.rename_app(app_id, new_label)
         _log_action(env, "RENAME", new_label, "ok", f"id={app_id}")
         return jsonify({"ok": True, "label": new_label})
-    except Exception as e:  # noqa: BLE001 - route boundary, failure logged and returned
-        _log_action(env, "RENAME", app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"rename app {app_id}")
+        _log_action(env, "RENAME", app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 502
 
 
 @app.route("/api/note", methods=["POST"])
@@ -553,9 +586,10 @@ def api_note():
             env, "NOTE", app_id, "ok", f'"{note[:60]}"' if note else "(cleared)"
         )
         return jsonify({"ok": True, "note": note})
-    except Exception as e:  # noqa: BLE001 - route boundary, failure logged and returned
-        _log_action(env, "NOTE", app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"set note on {app_id}")
+        _log_action(env, "NOTE", app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 502
 
 
 @app.route("/api/visibility", methods=["POST"])
@@ -575,9 +609,9 @@ def api_visibility():
             client.set_app_visibility(aid, bool(hide))
             results[aid] = "ok"
             _log_action(env, "VISIBILITY", aid, "ok", "hidden" if hide else "visible")
-        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
-            results[aid] = str(e)
-            _log_action(env, "VISIBILITY", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = _fail(e, f"set visibility on {aid}")
+            _log_action(env, "VISIBILITY", aid, "FAILED", results[aid])
     return jsonify(results)
 
 
@@ -604,9 +638,11 @@ def api_check_everyone():
                     "_rate_limited": True,
                 }
             )
-        return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
-    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
-        return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
+        msg = _fail(e, "fetch group catalog")
+        return jsonify({"error": f"Failed to fetch group catalog: {msg}"}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, "fetch group catalog")
+        return jsonify({"error": f"Failed to fetch group catalog: {msg}"}), 502
 
     results = {}
     for i, aid in enumerate(app_ids):
@@ -618,8 +654,9 @@ def api_check_everyone():
                 results["_error"] = f"Rate limited after {i} apps. Try again shortly."
                 results["_rate_limited"] = True
                 break
+            _fail(e, f"everyone check for {aid}")
             results[aid] = None
-        except Exception:
+        except Exception:  # noqa: BLE001 - per-app failure; logged, result is None
             log.warning("everyone check failed for app %s", aid, exc_info=True)
             results[aid] = None
         if i < len(app_ids) - 1:
@@ -649,9 +686,10 @@ def api_clear_assignments():
                 f"will_orphan={summary['group_scope_will_orphan']}"
             )
             _log_action(env, "CLEAR_ASSIGNMENTS", aid, "ok", detail)
-        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
-            results[aid] = {"error": str(e)}
-            _log_action(env, "CLEAR_ASSIGNMENTS", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            msg = _fail(e, f"clear assignments for {aid}")
+            results[aid] = {"error": msg}
+            _log_action(env, "CLEAR_ASSIGNMENTS", aid, "FAILED", msg)
     return jsonify(results)
 
 
@@ -672,7 +710,7 @@ def _get_group_detail(client, env: str, group_id: str) -> dict:
         }
         _group_detail_cache[key] = detail
         return detail
-    except Exception:
+    except Exception:  # noqa: BLE001 - display-only lookup; logged, shows "?"
         log.warning("group lookup failed for %s", group_id, exc_info=True)
         return {"id": group_id, "name": "?", "type": "?"}
 
@@ -775,8 +813,8 @@ def api_clear_progress_log_quiescence():
             final_count=final_count,
             group_member_total=group_member_total,
         )
-    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 500
-        return jsonify(error=str(e)), 500
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify(error=_fail(e, f"clear-progress quiescence for {app_id}")), 500
 
 
 @app.route("/api/clear-progress/status", methods=["POST"])
@@ -824,9 +862,9 @@ def api_clear_progress_status():
                     "http": 429,
                 }
             else:
-                results[aid] = {"error": f"HTTP {sc}: {str(e)[:200]}"}
-        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
-            results[aid] = {"error": str(e)[:200]}
+                results[aid] = {"error": _fail(e, f"clear-progress status for {aid}")}
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = {"error": _fail(e, f"clear-progress status for {aid}")}
 
     def _is_done(r: dict) -> bool:
         if r.get("error"):
@@ -1054,10 +1092,10 @@ def api_sp_config():
         text = _render_sp_config_text(cfg, env)
         slug = _safe_filename(cfg["label"])
         _log_action(env, "SP_CONFIG", cfg["label"], "ok")
-    except Exception as e:  # noqa: BLE001 - route boundary, logged and returned as 500
-        log.warning("sp-config failed for %s: %s", app_id, e)
-        _log_action(env, "SP_CONFIG", app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 500
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"sp-config for {app_id}")
+        _log_action(env, "SP_CONFIG", app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 500
 
     buf = io.BytesIO(text.encode("utf-8"))
     return send_file(

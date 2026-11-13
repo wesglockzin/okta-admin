@@ -1,4 +1,5 @@
 import pytest
+import requests
 
 import app as app_module
 
@@ -143,6 +144,38 @@ def test_apps_listing_is_sorted_and_joined(client, monkeypatch):
     assert [r["label"] for r in rows] == ["Alpha", "zeta"]
     assert rows[0]["policy_name"] == "Strong"
     assert rows[1]["policy_id"] is None
+
+
+class FailingOkta:
+    def list_access_policies(self):
+        resp = requests.Response()
+        resp.status_code = 403
+        resp._content = b'{"errorSummary": "secret-upstream-detail"}'
+        raise requests.HTTPError("403 Client Error", response=resp)
+
+    def set_app_note(self, app_id, note):
+        raise RuntimeError("internal-detail-with-token")
+
+
+def test_route_error_hides_upstream_body_and_logs_it(client, monkeypatch, caplog):
+    monkeypatch.setattr(app_module, "_client", lambda env: (FailingOkta(), None))
+    with caplog.at_level("WARNING", logger="okta-admin"):
+        resp = client.get("/api/policies")
+    assert resp.status_code == 502
+    assert resp.get_json() == {"error": "Okta returned 403"}
+    assert "secret-upstream-detail" not in resp.get_data(as_text=True)
+    assert "HTTP 403" in caplog.text
+    assert "secret-upstream-detail" in caplog.text
+
+
+def test_route_error_hides_raw_exception_text(client, monkeypatch, caplog):
+    monkeypatch.setattr(app_module, "_client", lambda env: (FailingOkta(), None))
+    body = {"app_id": "a1", "note": "x"}
+    with caplog.at_level("WARNING", logger="okta-admin"):
+        resp = client.post("/api/note", json=body, headers=SAME_SITE)
+    assert resp.status_code == 502
+    assert "internal-detail" not in resp.get_data(as_text=True)
+    assert "internal-detail-with-token" in caplog.text
 
 
 def test_sp_vendor_detection():

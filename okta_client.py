@@ -311,7 +311,7 @@ class OktaClient:
                 continue
             try:
                 g = self.get_group(gid)
-            except Exception:
+            except Exception:  # noqa: BLE001 - one bad group must not stop the scan; logged
                 # One bad group must not stop the scan.
                 log.warning("could not read group %s; skipping it", gid, exc_info=True)
                 continue
@@ -341,6 +341,7 @@ class OktaClient:
         try:
             err = (resp.json() or {}).get("errorCode") or "?"
         except Exception:  # noqa: BLE001 - unparseable error body, fall back to "?"
+            log.debug("unparseable error body for user assignment delete", exc_info=True)
             err = "?"
         return False, f"HTTP {resp.status_code} {err}"
 
@@ -511,6 +512,7 @@ class OktaClient:
             try:
                 err = resp.json() or {}
             except Exception:  # noqa: BLE001 - unparseable error body, treated as empty
+                log.debug("unparseable error body for app update", exc_info=True)
                 err = {}
             code = err.get("errorCode", "")
             if code in ("E0000006", "E0000015") or resp.status_code == 401:
@@ -602,8 +604,9 @@ class OktaClient:
             try:
                 detail = resp.json().get("errorSummary") or resp.text[:200]
             except Exception:  # noqa: BLE001 - unparseable error body, use raw text
+                log.debug("unparseable error body for visibility update", exc_info=True)
                 detail = resp.text[:200]
-            raise RuntimeError(f"{resp.status_code} {detail}")
+            raise requests.HTTPError(f"{resp.status_code} {detail}", response=resp)
         return resp.json()
 
     def _get_sso_domain(self) -> str:
@@ -655,7 +658,17 @@ class OktaClient:
                 api_metadata_url,
                 timeout=15,
                 headers={"Accept": "application/xml", "Content-Type": None},
+                allow_redirects=False,
             )
+            if 300 <= resp.status_code < 400:
+                log.warning(
+                    "refusing redirect (HTTP %s) while fetching metadata",
+                    resp.status_code,
+                )
+                return {
+                    **empty,
+                    "error": f"metadata fetch was redirected (HTTP {resp.status_code})",
+                }
             resp.raise_for_status()
             root = _ET.fromstring(resp.content)
 
@@ -852,6 +865,6 @@ class OktaClient:
                 results = [r for r in results if r["exact"] or r["gov"]]
 
             return results
-        except Exception:
+        except Exception:  # noqa: BLE001 - logged and re-raised
             log.exception("OIN catalog search failed")
             raise

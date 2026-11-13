@@ -28,7 +28,6 @@
             color: #333 !important; transition: background 0.15s;
         }
         .env-btn.active { background: #1b6ca8 !important; border-color: #1b6ca8 !important; color: #fff !important; font-weight: 600; }
-        .env-btn.env-prod.active { background: #b71c1c !important; border-color: #b71c1c !important; }
 
         .filter-bar {
             display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
@@ -221,7 +220,7 @@
         <div class="env-bar">
             <span style="font-size:0.82em; color:var(--pico-muted-color)">Env:</span>
             {% for name in envs %}
-            <button class="env-btn{% if name == default_env %} active{% endif %}{% if name == 'prod' %} env-prod{% endif %}" data-env="{{ name }}" onclick="setEnv('{{ name }}')">{{ name | upper }}</button>
+            <button class="env-btn{% if name == default_env %} active{% endif %}" data-env="{{ name }}" onclick="setEnv('{{ name }}')">{{ name | upper }}</button>
             {% endfor %}
             <a href="/logs" style="padding:0.25rem 1rem; font-size:0.85em; border-radius:999px; border:1px solid #bbb; background:#f0f0f0; color:#333; text-decoration:none">Logs</a>
             <button onclick="loadApps()" style="margin:0; padding:0.25rem 1rem; font-size:0.85em">Load Apps</button>
