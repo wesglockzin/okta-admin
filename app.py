@@ -155,7 +155,7 @@ if AZURE_STORAGE_CONNECTION_STRING:
         )
         _units_table = _tbl_svc.get_table_client(TABLE_UNITS)
         log.info("Auth-count source: enabled (table %s)", TABLE_UNITS)
-    except Exception:  # noqa: BLE001 - optional feature; logged, counts fall back to 0
+    except Exception:
         log.exception("Failed to init Azure Tables client; auth counts will be 0")
         _units_table = None
 else:
@@ -182,7 +182,7 @@ def _get_auth_counts(env: str) -> tuple[dict[str, int], dict[str, int]]:
                 by_client[client_id] = by_client.get(client_id, 0) + count
             elif unit:
                 by_label[unit] = by_label.get(unit, 0) + count
-    except Exception:  # noqa: BLE001 - optional overlay; logged, counts stay 0
+    except Exception:
         log.exception("[%s] auth-count fetch failed", env)
     return by_client, by_label
 
@@ -351,7 +351,7 @@ def oidc_callback():
         return redirect(url_for("login"))
     try:
         token = oauth.okta.authorize_access_token()
-    except Exception:  # noqa: BLE001 - login boundary; logged, user sent back to login
+    except Exception:
         log.exception("OIDC token exchange failed")
         session["login_error"] = "token exchange failed"
         return redirect(url_for("login"))
@@ -659,7 +659,7 @@ def api_check_everyone():
                 break
             _fail(e, f"everyone check for {aid}")
             results[aid] = None
-        except Exception:  # noqa: BLE001 - last resort per app; logged, result is None
+        except Exception:
             log.warning("everyone check failed for app %s", aid, exc_info=True)
             results[aid] = None
         if i < len(app_ids) - 1:
@@ -713,7 +713,7 @@ def _get_group_detail(client, env: str, group_id: str) -> dict:
         }
         _group_detail_cache[key] = detail
         return detail
-    except Exception:  # noqa: BLE001 - display-only lookup; logged, placeholder returned
+    except Exception:
         log.warning("group lookup failed for %s", group_id, exc_info=True)
         return {"id": group_id, "name": "?", "type": "?"}
 

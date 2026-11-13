@@ -120,7 +120,9 @@ def test_write_from_same_site_reaches_handler(client):
 def test_toggle_with_malformed_id_is_400_with_message(client, monkeypatch):
     def fake_client(env):
         session = requests.Session()
-        return app_module.OktaClient("https://okta.invalid", "test-key-not-real", session), None
+        return app_module.OktaClient(
+            "https://okta.invalid", "test-key-not-real", session
+        ), None
 
     monkeypatch.setattr(app_module, "_client", fake_client)
     body = {"action": "deactivate", "app_id": "a/b"}
