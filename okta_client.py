@@ -311,7 +311,7 @@ class OktaClient:
                 continue
             try:
                 g = self.get_group(gid)
-            except Exception:  # noqa: BLE001 - one bad group must not stop the scan; logged
+            except Exception:
                 # One bad group must not stop the scan.
                 log.warning("could not read group %s; skipping it", gid, exc_info=True)
                 continue
@@ -340,8 +340,10 @@ class OktaClient:
             return True, None
         try:
             err = (resp.json() or {}).get("errorCode") or "?"
-        except Exception:  # noqa: BLE001 - unparseable error body, fall back to "?"
-            log.debug("unparseable error body for user assignment delete", exc_info=True)
+        except Exception:
+            log.debug(
+                "unparseable error body for user assignment delete", exc_info=True
+            )
             err = "?"
         return False, f"HTTP {resp.status_code} {err}"
 
@@ -511,7 +513,7 @@ class OktaClient:
         if resp.status_code in (400, 403):
             try:
                 err = resp.json() or {}
-            except Exception:  # noqa: BLE001 - unparseable error body, treated as empty
+            except Exception:
                 log.debug("unparseable error body for app update", exc_info=True)
                 err = {}
             code = err.get("errorCode", "")
@@ -603,7 +605,7 @@ class OktaClient:
         if not resp.ok:
             try:
                 detail = resp.json().get("errorSummary") or resp.text[:200]
-            except Exception:  # noqa: BLE001 - unparseable error body, use raw text
+            except Exception:
                 log.debug("unparseable error body for visibility update", exc_info=True)
                 detail = resp.text[:200]
             raise requests.HTTPError(f"{resp.status_code} {detail}", response=resp)
@@ -865,6 +867,6 @@ class OktaClient:
                 results = [r for r in results if r["exact"] or r["gov"]]
 
             return results
-        except Exception:  # noqa: BLE001 - logged and re-raised
+        except Exception:
             log.exception("OIN catalog search failed")
             raise

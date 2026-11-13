@@ -268,7 +268,9 @@ def test_metadata_off_tenant_is_refused():
 
 def test_metadata_redirect_is_refused():
     url = f"{BASE}/api/v1/apps/a1/sso/saml/metadata"
-    redirect = FakeResponse(status=302, headers={"Location": "https://other.example.test/x"})
+    redirect = FakeResponse(
+        status=302, headers={"Location": "https://other.example.test/x"}
+    )
     client, session = make({("GET", url): [redirect]})
     meta = client._fetch_and_parse_metadata(url)
     assert "redirected" in meta["error"]
