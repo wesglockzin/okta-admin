@@ -95,10 +95,10 @@ def _fail(exc: Exception, context: str) -> str:
             context,
             resp.status_code,
             (resp.text or "")[:500],
-            exc_info=True,
+            exc_info=exc,
         )
         return f"Okta returned {resp.status_code}"
-    log.warning("%s failed: %s", context, exc, exc_info=True)
+    log.warning("%s failed: %s", context, exc, exc_info=exc)
     return "Request failed; see the server log"
 
 
