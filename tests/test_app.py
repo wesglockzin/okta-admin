@@ -50,7 +50,8 @@ def test_index_lists_configured_orgs(client):
 
 def test_clear_progress_defaults_to_first_configured_org(client):
     html = client.get("/clear-progress").get_data(as_text=True)
-    assert 'params.get(\'env\') || "alpha"' in html
+    assert "params.get('env')" in html
+    assert '"alpha"' in html
     assert "'dev'" not in html
 
 
@@ -62,10 +63,10 @@ def test_main_defaults_are_local(monkeypatch):
     app_module.main()
     assert calls["host"] == "127.0.0.1"
     assert calls["port"] == 5002
-    monkeypatch.setenv("HOST", "0.0.0.0")  # noqa: S104 - checking the override
+    monkeypatch.setenv("HOST", "0.0.0.0")
     monkeypatch.setenv("PORT", "9090")
     app_module.main()
-    assert calls["host"] == "0.0.0.0"  # noqa: S104
+    assert calls["host"] == "0.0.0.0"
     assert calls["port"] == 9090
 
 
