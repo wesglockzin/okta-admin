@@ -619,7 +619,7 @@ def api_check_everyone():
                 results["_rate_limited"] = True
                 break
             results[aid] = None
-        except Exception:  # noqa: BLE001 - per-app failure logged, app reported as unknown
+        except Exception:
             log.warning("everyone check failed for app %s", aid, exc_info=True)
             results[aid] = None
         if i < len(app_ids) - 1:
@@ -672,7 +672,7 @@ def _get_group_detail(client, env: str, group_id: str) -> dict:
         }
         _group_detail_cache[key] = detail
         return detail
-    except Exception:  # noqa: BLE001 - failure logged, placeholder returned
+    except Exception:
         log.warning("group lookup failed for %s", group_id, exc_info=True)
         return {"id": group_id, "name": "?", "type": "?"}
 
