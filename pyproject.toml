@@ -47,6 +47,9 @@ extend-select = ["T20", "BLE", "S110", "S112"]
 # The prints in the token setup script are interactive prompts, not diagnostics.
 "setup_tokens.py" = ["T201"]
 
+[tool.deptry]
+pep621_dev_dependency_groups = ["dev"]
+
 [tool.deptry.per_rule_ignores]
 # gunicorn is started by the Dockerfile CMD, never imported.
 DEP002 = ["gunicorn"]
