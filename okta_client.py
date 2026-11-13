@@ -1,24 +1,32 @@
 from __future__ import annotations
 
+import logging
 import re
 import textwrap
 import time
 import urllib.parse
 import xml.etree.ElementTree as _ET
+from typing import ClassVar
 
 import requests
 
-OKTA_ENVIRONMENTS = {
-    "dev":  {"url": "https://host.example.com", "token_var": "OKTA_ADMIN_DEV_API_TOKEN"},
-    "stg":  {"url": "https://host.example.com", "token_var": "OKTA_ADMIN_STG_API_TOKEN"},
-    "prod": {"url": "https://host.example.com", "token_var": "OKTA_ADMIN_PROD_API_TOKEN"},
-}
+log = logging.getLogger(__name__)
 
 APP_SIGN_ON_MODES = {
-    "SAML_2_0", "SAML_1_1", "OPENID_CONNECT",
-    "BROWSER_PLUGIN", "AUTO_LOGIN", "SECURE_PASSWORD_STORE", "BOOKMARK",
-    "WS_FEDERATION", "RADIUS_FOR_GENERIC_APP",
+    "SAML_2_0",
+    "SAML_1_1",
+    "OPENID_CONNECT",
+    "BROWSER_PLUGIN",
+    "AUTO_LOGIN",
+    "SECURE_PASSWORD_STORE",
+    "BOOKMARK",
+    "WS_FEDERATION",
+    "RADIUS_FOR_GENERIC_APP",
 }
+
+
+class InvalidOktaId(ValueError):
+    """An Okta object id that is not plain alphanumerics."""
 
 
 class OktaClient:
@@ -28,7 +36,6 @@ class OktaClient:
         self._session.headers["Authorization"] = f"SSWS {api_token}"
         self._session.headers["Content-Type"] = "application/json"
         self._sso_domain: str | None = None
-
 
     def _get_paginated(self, url: str, params: dict | None = None) -> list:
         results = []
@@ -40,8 +47,9 @@ class OktaClient:
             url = self._next_link(resp)
         return results
 
-    def _request_with_retry(self, method: str, url: str, *, retries: int = 4,
-                            **kwargs) -> requests.Response:
+    def _request_with_retry(
+        self, method: str, url: str, *, retries: int = 4, **kwargs
+    ) -> requests.Response:
         resp = None
         for attempt in range(retries + 1):
             resp = self._session.request(method, url, **kwargs)
@@ -60,8 +68,12 @@ class OktaClient:
             time.sleep(max(reset - int(time.time()), 0) + 1)
         return resp
 
-    def _post(self, url: str, json: dict, timeout: int = 15, retries: int = 4) -> requests.Response:
-        return self._request_with_retry("POST", url, json=json, timeout=timeout, retries=retries)
+    def _post(
+        self, url: str, json: dict, timeout: int = 15, retries: int = 4
+    ) -> requests.Response:
+        return self._request_with_retry(
+            "POST", url, json=json, timeout=timeout, retries=retries
+        )
 
     @staticmethod
     def _next_link(resp: requests.Response) -> str | None:
@@ -71,50 +83,52 @@ class OktaClient:
                 return part.split(";")[0].strip().strip("<>")
         return None
 
-
     def get_all_apps(self) -> list[dict]:
         all_apps = self._get_paginated(
-            f"{self.base_url}/api/v1/apps",
-            params={"limit": 200}
+            f"{self.base_url}/api/v1/apps", params={"limit": 200}
         )
-        return [a for a in all_apps if a.get("signOnMode") in APP_SIGN_ON_MODES or a.get("signOnMode") is None]
-
+        return [
+            a
+            for a in all_apps
+            if a.get("signOnMode") in APP_SIGN_ON_MODES or a.get("signOnMode") is None
+        ]
 
     def list_access_policies(self) -> list[dict]:
         return self._get_paginated(
             f"{self.base_url}/api/v1/policies",
-            params={"type": "ACCESS_POLICY", "limit": 200}
+            params={"type": "ACCESS_POLICY", "limit": 200},
         )
 
     def get_app_policy_map(self) -> dict[str, dict]:
         import logging as _log
+
         mapping: dict[str, dict] = {}
         for p in self.list_access_policies():
             pid = p["id"]
             try:
                 apps = self._get_paginated(
-                    f"{self.base_url}/api/v1/policies/{pid}/app",
-                    params={"limit": 200}
+                    f"{self.base_url}/api/v1/policies/{pid}/app", params={"limit": 200}
                 )
                 for app in apps:
                     mapping[app["id"]] = {"policy_id": pid, "policy_name": p["name"]}
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one bad policy must not stop the map; logged
                 _log.getLogger(__name__).warning(
                     "policy->app fetch failed for policy %s (%s); its apps are "
-                    "OMITTED from the policy map", pid, e)
+                    "OMITTED from the policy map",
+                    pid,
+                    e,
+                )
         return mapping
-
 
     def list_idp_routing_policies(self) -> list[dict]:
         return self._get_paginated(
             f"{self.base_url}/api/v1/policies",
-            params={"type": "IDP_DISCOVERY", "limit": 200}
+            params={"type": "IDP_DISCOVERY", "limit": 200},
         )
 
     def list_routing_rules(self, policy_id: str) -> list[dict]:
         return self._get_paginated(
-            f"{self.base_url}/api/v1/policies/{policy_id}/rules",
-            params={"limit": 200}
+            f"{self.base_url}/api/v1/policies/{policy_id}/rules", params={"limit": 200}
         )
 
     def get_app_routing_rule_map(self) -> dict[str, dict]:
@@ -132,7 +146,6 @@ class OktaClient:
                         }
         return mapping
 
-
     def assign_policy_to_app(self, app_id: str, policy_id: str) -> None:
         resp = self._session.put(
             f"{self.base_url}/api/v1/apps/{app_id}/policies/{policy_id}"
@@ -148,19 +161,26 @@ class OktaClient:
 
     def _put_rule(self, policy_id: str, rule_id: str, rule: dict) -> None:
         resp = self._session.put(
-            f"{self.base_url}/api/v1/policies/{policy_id}/rules/{rule_id}",
-            json=rule
+            f"{self.base_url}/api/v1/policies/{policy_id}/rules/{rule_id}", json=rule
         )
         resp.raise_for_status()
 
-    def add_app_to_routing_rule(self, policy_id: str, rule_id: str, app_id: str) -> None:
+    def add_app_to_routing_rule(
+        self, policy_id: str, rule_id: str, app_id: str
+    ) -> None:
         rule = self._get_rule(policy_id, rule_id)
-        includes = rule.setdefault("conditions", {}).setdefault("app", {}).setdefault("include", [])
+        includes = (
+            rule.setdefault("conditions", {})
+            .setdefault("app", {})
+            .setdefault("include", [])
+        )
         if not any(r.get("id") == app_id for r in includes):
             includes.append({"id": app_id, "type": "APP"})
             self._put_rule(policy_id, rule_id, rule)
 
-    def remove_app_from_routing_rule(self, policy_id: str, rule_id: str, app_id: str) -> None:
+    def remove_app_from_routing_rule(
+        self, policy_id: str, rule_id: str, app_id: str
+    ) -> None:
         rule = self._get_rule(policy_id, rule_id)
         includes = rule.get("conditions", {}).get("app", {}).get("include", [])
         filtered = [r for r in includes if r.get("id") != app_id]
@@ -169,14 +189,9 @@ class OktaClient:
             self._put_rule(policy_id, rule_id, rule)
 
     def activate_app(self, app_id: str) -> None:
+        app_id = self._safe_id(app_id)
         resp = self._session.post(
             f"{self.base_url}/api/v1/apps/{app_id}/lifecycle/activate"
-        )
-        resp.raise_for_status()
-
-    def deactivate_app(self, app_id: str) -> None:
-        resp = self._session.post(
-            f"{self.base_url}/api/v1/apps/{app_id}/lifecycle/deactivate"
         )
         resp.raise_for_status()
 
@@ -191,7 +206,9 @@ class OktaClient:
         assignments = self.get_app_assignments(src_app_id)
         if assignments["type"] == "groups":
             for gid in assignments["ids"]:
-                r = self._session.put(f"{self.base_url}/api/v1/apps/{dst_app_id}/groups/{gid}", json={})
+                r = self._session.put(
+                    f"{self.base_url}/api/v1/apps/{dst_app_id}/groups/{gid}", json={}
+                )
                 r.raise_for_status()
         else:
             for uid in assignments["ids"]:
@@ -202,9 +219,10 @@ class OktaClient:
                 r.raise_for_status()
         return assignments
 
-
     def get_group(self, group_id: str) -> dict:
-        resp = self._request_with_retry("GET", f"{self.base_url}/api/v1/groups/{group_id}")
+        resp = self._request_with_retry(
+            "GET", f"{self.base_url}/api/v1/groups/{group_id}"
+        )
         resp.raise_for_status()
         return resp.json()
 
@@ -233,8 +251,9 @@ class OktaClient:
         return items, bool(self._next_link(resp))
 
     def recent_membership_remove_count(self, app_id: str, minutes: int = 5) -> int:
-        from datetime import datetime, timedelta, timezone
-        since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).strftime(
+        from datetime import UTC, datetime, timedelta
+
+        since = (datetime.now(UTC) - timedelta(minutes=minutes)).strftime(
             "%Y-%m-%dT%H:%M:%S.000Z"
         )
         filt = (
@@ -298,6 +317,8 @@ class OktaClient:
             try:
                 g = self.get_group(gid)
             except Exception:
+                # One bad group must not stop the scan.
+                log.warning("could not read group %s; skipping it", gid, exc_info=True)
                 continue
             name = (g.get("profile") or {}).get("name") or ""
             gtype = g.get("type") or ""
@@ -306,19 +327,28 @@ class OktaClient:
         return None
 
     def remove_group_from_app(self, app_id: str, group_id: str) -> bool:
-        resp = self._request_with_retry("DELETE", f"{self.base_url}/api/v1/apps/{app_id}/groups/{group_id}")
+        resp = self._request_with_retry(
+            "DELETE", f"{self.base_url}/api/v1/apps/{app_id}/groups/{group_id}"
+        )
         if resp.status_code in (204, 200, 404):
             return True
         resp.raise_for_status()
         return False
 
-    def delete_user_app_assignment(self, app_id: str, user_id: str) -> tuple[bool, str | None]:
-        resp = self._request_with_retry("DELETE", f"{self.base_url}/api/v1/apps/{app_id}/users/{user_id}")
+    def delete_user_app_assignment(
+        self, app_id: str, user_id: str
+    ) -> tuple[bool, str | None]:
+        resp = self._request_with_retry(
+            "DELETE", f"{self.base_url}/api/v1/apps/{app_id}/users/{user_id}"
+        )
         if resp.status_code in (204, 200, 404):
             return True, None
         try:
             err = (resp.json() or {}).get("errorCode") or "?"
         except Exception:
+            log.debug(
+                "unparseable error body for user assignment delete", exc_info=True
+            )
             err = "?"
         return False, f"HTTP {resp.status_code} {err}"
 
@@ -357,7 +387,9 @@ class OktaClient:
             "more_records_after_first_page": more_pages,
         }
 
-    def create_oin_instance(self, oin_key: str, label: str, legacy_app_settings: dict | None = None) -> dict:
+    def create_oin_instance(
+        self, oin_key: str, label: str, legacy_app_settings: dict | None = None
+    ) -> dict:
         from urllib.parse import urlparse
 
         app_settings: dict = {}
@@ -372,10 +404,13 @@ class OktaClient:
             for a in existing:
                 if a.get("name") == oin_key and a.get("label") == label:
                     return a
-        except Exception:
+        except Exception:  # noqa: BLE001 - preflight is best-effort; logged
             import logging as _log
+
             _log.getLogger(__name__).warning(
-                "create_oin_instance preflight lookup failed for %r; proceeding to create", label)
+                "create_oin_instance preflight lookup failed for %r; proceeding to create",
+                label,
+            )
 
         payload = {
             "name": oin_key,
@@ -394,8 +429,12 @@ class OktaClient:
             ]
             if missing:
                 sso = legacy_app_settings.get("signOn", {})
-                acs_url   = sso.get("ssoAcsUrl", "") or sso.get("ssoAcsUrlOverride", "") or ""
-                audience  = sso.get("audience", "") or sso.get("audienceOverride", "") or ""
+                acs_url = (
+                    sso.get("ssoAcsUrl", "") or sso.get("ssoAcsUrlOverride", "") or ""
+                )
+                audience = (
+                    sso.get("audience", "") or sso.get("audienceOverride", "") or ""
+                )
                 login_url = sso.get("loginUrl", "") or acs_url
 
                 def _hostname_first(url: str) -> str:
@@ -403,45 +442,51 @@ class OktaClient:
                     return h.split(".")[0] if h else ""
 
                 subdomain = _hostname_first(acs_url) or _hostname_first(audience)
-                base_url  = f"{urlparse(acs_url).scheme}://{urlparse(acs_url).hostname}" if acs_url else ""
+                base_url = (
+                    f"{urlparse(acs_url).scheme}://{urlparse(acs_url).hostname}"
+                    if acs_url
+                    else ""
+                )
 
                 derived: dict[str, str] = {
-                    "acsUrl":              acs_url,
-                    "acsURL":              acs_url,
-                    "acs_url":             acs_url,
-                    "ssoUrl":              acs_url,
-                    "ssoAcsUrl":           acs_url,
-                    "url":                 acs_url,
-                    "audience":            audience,
-                    "audUri":              audience,
+                    "acsUrl": acs_url,
+                    "acsURL": acs_url,
+                    "acs_url": acs_url,
+                    "ssoUrl": acs_url,
+                    "ssoAcsUrl": acs_url,
+                    "url": acs_url,
+                    "audience": audience,
+                    "audUri": audience,
                     "audienceRestriction": audience,
-                    "audience_uri":        audience,
-                    "entityId":            audience,
-                    "spEntityID":          audience,
-                    "spEntityId":          audience,
-                    "sp_entity_id":        audience,
-                    "issuer":              audience,
-                    "subdomain":           subdomain,
-                    "subDomain":           subdomain,
-                    "orgName":             subdomain,
-                    "siteName":            subdomain,
-                    "environment":         subdomain,
-                    "accountName":         subdomain,
-                    "companyName":         subdomain,
-                    "loginUrl":            login_url,
-                    "loginURL":            login_url,
-                    "baseUrl":             base_url,
-                    "baseURL":             base_url,
-                    "siteURL":             audience or acs_url,
+                    "audience_uri": audience,
+                    "entityId": audience,
+                    "spEntityID": audience,
+                    "spEntityId": audience,
+                    "sp_entity_id": audience,
+                    "issuer": audience,
+                    "subdomain": subdomain,
+                    "subDomain": subdomain,
+                    "orgName": subdomain,
+                    "siteName": subdomain,
+                    "environment": subdomain,
+                    "accountName": subdomain,
+                    "companyName": subdomain,
+                    "loginUrl": login_url,
+                    "loginURL": login_url,
+                    "baseUrl": base_url,
+                    "baseURL": base_url,
+                    "siteURL": audience or acs_url,
                 }
                 filled: list[str] = []
                 for field in missing:
-                    if field in derived and derived[field]:
+                    if derived.get(field):
                         payload["settings"]["app"][field] = derived[field]
                         filled.append(f"{field}={derived[field]!r}")
 
                 if filled:
-                    resp = self._post(f"{self.base_url}/api/v1/apps", json=payload, timeout=15)
+                    resp = self._post(
+                        f"{self.base_url}/api/v1/apps", json=payload, timeout=15
+                    )
 
         if not resp.ok:
             raise RuntimeError(
@@ -451,29 +496,43 @@ class OktaClient:
 
     def copy_saml_config(self, legacy_id: str, oin_id: str) -> dict:
         legacy_sso = self.get_app(legacy_id).get("settings", {}).get("signOn", {})
-        oin        = self.get_app(oin_id)
-        oin_sso    = oin.setdefault("settings", {}).setdefault("signOn", {})
+        oin = self.get_app(oin_id)
+        oin_sso = oin.setdefault("settings", {}).setdefault("signOn", {})
 
-        oin_sso["ssoAcsUrlOverride"]   = legacy_sso.get("ssoAcsUrl")
-        oin_sso["audienceOverride"]    = legacy_sso.get("audience")
-        oin_sso["recipientOverride"]   = legacy_sso.get("recipient")
+        oin_sso["ssoAcsUrlOverride"] = legacy_sso.get("ssoAcsUrl")
+        oin_sso["audienceOverride"] = legacy_sso.get("audience")
+        oin_sso["recipientOverride"] = legacy_sso.get("recipient")
         oin_sso["destinationOverride"] = legacy_sso.get("destination")
         oin_sso["attributeStatements"] = legacy_sso.get("attributeStatements", [])
 
-        fields = ["ssoAcsUrl", "audience", "recipient", "destination", "attributeStatements"]
-        resp = self._session.put(f"{self.base_url}/api/v1/apps/{oin_id}", json=oin, timeout=15)
+        fields = [
+            "ssoAcsUrl",
+            "audience",
+            "recipient",
+            "destination",
+            "attributeStatements",
+        ]
+        resp = self._session.put(
+            f"{self.base_url}/api/v1/apps/{oin_id}", json=oin, timeout=15
+        )
         if resp.status_code in (400, 403):
             try:
                 err = resp.json() or {}
             except Exception:
+                log.debug("unparseable error body for app update", exc_info=True)
                 err = {}
             code = err.get("errorCode", "")
             if code in ("E0000006", "E0000015") or resp.status_code == 401:
                 raise PermissionError(
                     f"copy_saml_config denied for {oin_id}: HTTP {resp.status_code} {code} "
-                    f"{err.get('errorSummary', '')}".strip())
-            return {"locked": True, "copied": [], "skipped": fields,
-                    "reason": f"HTTP {resp.status_code} {code} {err.get('errorSummary', '')}".strip()}
+                    f"{err.get('errorSummary', '')}".strip()
+                )
+            return {
+                "locked": True,
+                "copied": [],
+                "skipped": fields,
+                "reason": f"HTTP {resp.status_code} {code} {err.get('errorSummary', '')}".strip(),
+            }
         resp.raise_for_status()
         return {"locked": False, "copied": fields, "skipped": []}
 
@@ -481,17 +540,20 @@ class OktaClient:
         pol = policy_map.get(legacy_id)
         if not pol:
             return None
-        resp = self._session.put(f"{self.base_url}/api/v1/apps/{oin_id}/policies/{pol['policy_id']}")
+        resp = self._session.put(
+            f"{self.base_url}/api/v1/apps/{oin_id}/policies/{pol['policy_id']}"
+        )
         resp.raise_for_status()
         return pol["policy_name"]
 
-    def copy_routing_rule(self, legacy_id: str, oin_id: str, routing_map: dict) -> str | None:
+    def copy_routing_rule(
+        self, legacy_id: str, oin_id: str, routing_map: dict
+    ) -> str | None:
         rt = routing_map.get(legacy_id)
         if not rt:
             return None
         self.add_app_to_routing_rule(rt["policy_id"], rt["rule_id"], oin_id)
         return rt["rule_name"]
-
 
     def get_app(self, app_id: str) -> dict:
         resp = self._session.get(f"{self.base_url}/api/v1/apps/{app_id}")
@@ -511,19 +573,20 @@ class OktaClient:
     @staticmethod
     def _safe_id(value: str) -> str:
         if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9]+", value):
-            raise ValueError(f"invalid Okta id: {value!r}")
+            raise InvalidOktaId(f"invalid Okta id: {value!r}")
         return value
 
     def deactivate_app(self, app_id: str) -> None:
         app_id = self._safe_id(app_id)
-        resp = self._session.post(f"{self.base_url}/api/v1/apps/{app_id}/lifecycle/deactivate")
+        resp = self._session.post(
+            f"{self.base_url}/api/v1/apps/{app_id}/lifecycle/deactivate"
+        )
         resp.raise_for_status()
 
     def delete_app(self, app_id: str) -> None:
         app_id = self._safe_id(app_id)
         resp = self._session.delete(f"{self.base_url}/api/v1/apps/{app_id}")
         resp.raise_for_status()
-
 
     def get_app_note(self, app_id: str) -> str:
         app_data = self.get_app(app_id)
@@ -538,7 +601,6 @@ class OktaClient:
         resp.raise_for_status()
         return resp.json()
 
-
     def set_app_visibility(self, app_id: str, hide: bool) -> dict:
         app_data = self.get_app(app_id)
         vis = app_data.setdefault("visibility", {})
@@ -549,10 +611,10 @@ class OktaClient:
             try:
                 detail = resp.json().get("errorSummary") or resp.text[:200]
             except Exception:
+                log.debug("unparseable error body for visibility update", exc_info=True)
                 detail = resp.text[:200]
-            raise RuntimeError(f"{resp.status_code} {detail}")
+            raise requests.HTTPError(f"{resp.status_code} {detail}", response=resp)
         return resp.json()
-
 
     def _get_sso_domain(self) -> str:
         if self._sso_domain is not None:
@@ -561,109 +623,166 @@ class OktaClient:
             resp = self._session.get(f"{self.base_url}/api/v1/domains", timeout=10)
             resp.raise_for_status()
             domains = resp.json().get("domains", [])
-            custom = next((d["domain"] for d in domains if d.get("id") != "default"), None)
+            custom = next(
+                (d["domain"] for d in domains if d.get("id") != "default"), None
+            )
             self._sso_domain = f"https://{custom}" if custom else self.base_url
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - falls back to base URL; logged
             import logging as _log
+
             _log.getLogger(__name__).warning("domains fetch failed: %s", e)
             self._sso_domain = self.base_url
         return self._sso_domain
 
     def _fetch_and_parse_metadata(self, api_metadata_url: str) -> dict:
         _NS = {
-            'md': 'urn:oasis:names:tc:SAML:2.0:metadata',
-            'ds': 'http://www.w3.org/2000/09/xmldsig#',
+            "md": "urn:oasis:names:tc:SAML:2.0:metadata",
+            "ds": "http://www.w3.org/2000/09/xmldsig#",
         }
-        empty = {'idp_entity_id': '', 'idp_sso_url': '', 'cert_pem': '', 'key_id': '', 'error': ''}
+        empty = {
+            "idp_entity_id": "",
+            "idp_sso_url": "",
+            "cert_pem": "",
+            "key_id": "",
+            "error": "",
+        }
         meta_host = urllib.parse.urlparse(api_metadata_url).hostname
         tenant_host = urllib.parse.urlparse(self.base_url).hostname
         if meta_host != tenant_host:
             import logging as _log
+
             _log.getLogger(__name__).warning(
-                "refusing to fetch metadata off-tenant: %s (tenant %s)", meta_host, tenant_host)
-            return {**empty, 'error': f"metadata host {meta_host} is not the tenant host"}
+                "refusing to fetch metadata off-tenant: %s (tenant %s)",
+                meta_host,
+                tenant_host,
+            )
+            return {
+                **empty,
+                "error": f"metadata host {meta_host} is not the tenant host",
+            }
         try:
-            resp = self._session.get(api_metadata_url, timeout=15,
-                                     headers={"Accept": "application/xml", "Content-Type": None})
+            resp = self._session.get(
+                api_metadata_url,
+                timeout=15,
+                headers={"Accept": "application/xml", "Content-Type": None},
+                allow_redirects=False,
+            )
+            if 300 <= resp.status_code < 400:
+                log.warning(
+                    "refusing redirect (HTTP %s) while fetching metadata",
+                    resp.status_code,
+                )
+                return {
+                    **empty,
+                    "error": f"metadata fetch was redirected (HTTP {resp.status_code})",
+                }
             resp.raise_for_status()
             root = _ET.fromstring(resp.content)
 
-            idp_entity_id = root.get('entityID', '')
-            key_id = idp_entity_id.rsplit('/', 1)[-1] if idp_entity_id else ''
+            idp_entity_id = root.get("entityID", "")
+            key_id = idp_entity_id.rsplit("/", 1)[-1] if idp_entity_id else ""
 
-            idp_sso_url = ''
-            for sso in root.findall('.//md:SingleSignOnService', _NS):
-                binding = sso.get('Binding', '')
-                loc     = sso.get('Location', '')
-                if 'HTTP-POST' in binding:
+            idp_sso_url = ""
+            for sso in root.findall(".//md:SingleSignOnService", _NS):
+                binding = sso.get("Binding", "")
+                loc = sso.get("Location", "")
+                if "HTTP-POST" in binding:
                     idp_sso_url = loc
                     break
-                if 'HTTP-Redirect' in binding and not idp_sso_url:
+                if "HTTP-Redirect" in binding and not idp_sso_url:
                     idp_sso_url = loc
 
-            cert_pem = ''
-            for kd in root.findall('.//md:KeyDescriptor', _NS):
-                if kd.get('use', 'signing') == 'signing':
-                    x509 = kd.find('.//ds:X509Certificate', _NS)
+            cert_pem = ""
+            for kd in root.findall(".//md:KeyDescriptor", _NS):
+                if kd.get("use", "signing") == "signing":
+                    x509 = kd.find(".//ds:X509Certificate", _NS)
                     if x509 is not None and x509.text:
-                        b64 = x509.text.replace('\n', '').replace('\r', '').strip()
-                        wrapped = '\n'.join(textwrap.wrap(b64, 64))
+                        b64 = x509.text.replace("\n", "").replace("\r", "").strip()
+                        wrapped = "\n".join(textwrap.wrap(b64, 64))
                         cert_pem = f"-----BEGIN CERTIFICATE-----\n{wrapped}\n-----END CERTIFICATE-----"
                         break
 
-            return {'idp_entity_id': idp_entity_id, 'idp_sso_url': idp_sso_url,
-                    'cert_pem': cert_pem, 'key_id': key_id, 'error': ''}
-        except Exception as e:
+            return {
+                "idp_entity_id": idp_entity_id,
+                "idp_sso_url": idp_sso_url,
+                "cert_pem": cert_pem,
+                "key_id": key_id,
+                "error": "",
+            }
+        except Exception as e:  # noqa: BLE001 - error is logged and returned in the result
             import logging as _log
-            _log.getLogger(__name__).warning("metadata fetch/parse failed for %s: %s", api_metadata_url, e)
-            return {**empty, 'error': f"{type(e).__name__}: {e}"}
+
+            _log.getLogger(__name__).warning(
+                "metadata fetch/parse failed for %s: %s", api_metadata_url, e
+            )
+            return {**empty, "error": f"{type(e).__name__}: {e}"}
 
     def get_saml_config(self, app_id: str) -> dict:
         app_data = self.get_app(app_id)
-        name     = app_data.get("name", "")
-        label    = app_data.get("label", "")
-        status   = app_data.get("status", "ACTIVE")
-        sign_on  = (app_data.get("settings") or {}).get("signOn") or {}
+        name = app_data.get("name", "")
+        label = app_data.get("label", "")
+        status = app_data.get("status", "ACTIVE")
+        sign_on = (app_data.get("settings") or {}).get("signOn") or {}
 
         is_oin = not name.startswith("template_")
 
-        api_metadata_url = ((app_data.get("_links") or {}).get("metadata") or {}).get("href") or ""
-        meta = self._fetch_and_parse_metadata(api_metadata_url) if api_metadata_url else \
-               {'idp_entity_id': '', 'idp_sso_url': '', 'cert_pem': '', 'key_id': '',
-                'error': 'no metadata href on app'}
+        api_metadata_url = ((app_data.get("_links") or {}).get("metadata") or {}).get(
+            "href"
+        ) or ""
+        meta = (
+            self._fetch_and_parse_metadata(api_metadata_url)
+            if api_metadata_url
+            else {
+                "idp_entity_id": "",
+                "idp_sso_url": "",
+                "cert_pem": "",
+                "key_id": "",
+                "error": "no metadata href on app",
+            }
+        )
 
         sso_domain = self._get_sso_domain()
-        if meta['key_id']:
+        if meta["key_id"]:
             metadata_url = f"{sso_domain}/app/{meta['key_id']}/sso/saml/metadata"
         else:
             metadata_url = f"{sso_domain}/app/{name}/{app_id}/sso/saml/metadata"
 
-        acs_url = (sign_on.get("ssoAcsUrlOverride") or sign_on.get("ssoAcsUrl") or "")
-        entity_id    = (sign_on.get("audienceOverride") or sign_on.get("audience") or "")
+        acs_url = sign_on.get("ssoAcsUrlOverride") or sign_on.get("ssoAcsUrl") or ""
+        entity_id = sign_on.get("audienceOverride") or sign_on.get("audience") or ""
         nameid_format = sign_on.get("subjectNameIdFormat", "")
-        attr_stmts   = sign_on.get("attributeStatements") or []
+        attr_stmts = sign_on.get("attributeStatements") or []
 
         return {
-            "app_id":        app_id,
-            "label":         label,
-            "name":          name,
-            "status":        status,
-            "is_oin":        is_oin,
-            "metadata_url":  metadata_url,
-            "acs_url":       acs_url,
-            "entity_id":     entity_id,
+            "app_id": app_id,
+            "label": label,
+            "name": name,
+            "status": status,
+            "is_oin": is_oin,
+            "metadata_url": metadata_url,
+            "acs_url": acs_url,
+            "entity_id": entity_id,
             "nameid_format": nameid_format,
-            "attr_stmts":    attr_stmts,
-            "idp_entity_id": meta['idp_entity_id'],
-            "idp_sso_url":   meta['idp_sso_url'],
-            "cert_pem":      meta['cert_pem'],
-            "idp_metadata_error": meta.get('error', ''),
+            "attr_stmts": attr_stmts,
+            "idp_entity_id": meta["idp_entity_id"],
+            "idp_sso_url": meta["idp_sso_url"],
+            "cert_pem": meta["cert_pem"],
+            "idp_metadata_error": meta.get("error", ""),
         }
 
-
-    _SSO_MODES = {"SAML_2_0", "OPENID_CONNECT", "AUTO_LOGIN", "SECURE_PASSWORD_STORE"}
-    _FEDERATION_MODES = {"SAML_2_0", "OPENID_CONNECT"}
-    _SSO_KEYWORDS = {"saml", "sso", "single sign-on", "openid", "oidc"}
+    _SSO_MODES: ClassVar[set[str]] = {
+        "SAML_2_0",
+        "OPENID_CONNECT",
+        "AUTO_LOGIN",
+        "SECURE_PASSWORD_STORE",
+    }
+    _FEDERATION_MODES: ClassVar[set[str]] = {"SAML_2_0", "OPENID_CONNECT"}
+    _SSO_KEYWORDS: ClassVar[set[str]] = {
+        "saml",
+        "sso",
+        "single sign-on",
+        "openid",
+        "oidc",
+    }
 
     def _oin_has_sso(self, item: dict) -> bool:
         modes = set(item.get("signOnModes") or [])
@@ -672,25 +791,26 @@ class OktaClient:
         return bool(modes & self._SSO_MODES)
 
     _PROVISIONING_PATTERNS = re.compile(
-        r'provisioning connector|by aquera', re.IGNORECASE
+        r"provisioning connector|by aquera", re.IGNORECASE
     )
-    _GOV_PATTERNS = re.compile(
-        r'\b(gov(ernment)?|fed(eral)?)\b', re.IGNORECASE
-    )
+    _GOV_PATTERNS = re.compile(r"\b(gov(ernment)?|fed(eral)?)\b", re.IGNORECASE)
 
-    _LABEL_SEARCH_MAP: dict[str, str] = {}
+    _LABEL_SEARCH_MAP: ClassVar[dict[str, str]] = {}
 
     def search_oin_catalog(self, name: str, limit: int = 20) -> list[dict]:
         name_stripped = name.strip()
         raw_first = name_stripped.split()[0].lower() if name_stripped else ""
-        first_word_lower = raw_first if raw_first in self._LABEL_SEARCH_MAP \
-            else raw_first.split('-')[0]
+        first_word_lower = (
+            raw_first
+            if raw_first in self._LABEL_SEARCH_MAP
+            else raw_first.split("-")[0]
+        )
         if first_word_lower in self._LABEL_SEARCH_MAP:
             name_stripped = self._LABEL_SEARCH_MAP[first_word_lower]
 
         first_word = name_stripped.split()[0] if name_stripped else name_stripped
         q = urllib.parse.quote(first_word)
-        word_re = re.compile(r'\b' + re.escape(first_word) + r'\b', re.IGNORECASE)
+        word_re = re.compile(r"\b" + re.escape(first_word) + r"\b", re.IGNORECASE)
         try:
             resp = self._session.get(
                 f"{self.base_url}/api/v1/catalog/apps?q={q}&limit={limit}",
@@ -700,7 +820,9 @@ class OktaClient:
             items = resp.json() or []
             name_lower = name_stripped.lower()
             results = []
-            _sso_kw_re = re.compile(r'\b(saml|oidc|sso|single sign.?on|openid)\b', re.IGNORECASE)
+            _sso_kw_re = re.compile(
+                r"\b(saml|oidc|sso|single sign.?on|openid)\b", re.IGNORECASE
+            )
             for item in items:
                 if not self._oin_has_sso(item):
                     continue
@@ -709,9 +831,9 @@ class OktaClient:
                     continue
                 if self._PROVISIONING_PATTERNS.search(display):
                     continue
-                base_name  = name_lower.split(' - ')[0].strip()
-                modes      = set(item.get("signOnModes") or [])
-                desc       = item.get("description") or ""
+                base_name = name_lower.split(" - ")[0].strip()
+                modes = set(item.get("signOnModes") or [])
+                desc = item.get("description") or ""
                 federation = bool(modes & self._FEDERATION_MODES)
                 sso_signal = (
                     federation
@@ -719,17 +841,20 @@ class OktaClient:
                     or bool(_sso_kw_re.search(desc))
                 )
                 primary = display.lower().startswith(first_word.lower())
-                results.append({
-                    "name":        item.get("name", ""),
-                    "displayName": display,
-                    "category":    item.get("category", ""),
-                    "verified":    item.get("verificationStatus") == "OKTA_VERIFIED",
-                    "exact":       display.lower() == name_lower or display.lower() == base_name,
-                    "gov":         bool(self._GOV_PATTERNS.search(display)),
-                    "sso_named":   sso_signal,
-                    "federation":  federation,
-                    "primary":     primary,
-                })
+                results.append(
+                    {
+                        "name": item.get("name", ""),
+                        "displayName": display,
+                        "category": item.get("category", ""),
+                        "verified": item.get("verificationStatus") == "OKTA_VERIFIED",
+                        "exact": display.lower() == name_lower
+                        or display.lower() == base_name,
+                        "gov": bool(self._GOV_PATTERNS.search(display)),
+                        "sso_named": sso_signal,
+                        "federation": federation,
+                        "primary": primary,
+                    }
+                )
 
             if any(r["federation"] and r["primary"] for r in results):
                 results = [r for r in results if r["federation"] and r["primary"]]
@@ -738,7 +863,9 @@ class OktaClient:
             elif any(r["sso_named"] for r in results):
                 results = [r for r in results if r["sso_named"]]
 
-            results = [r for r in results if r["verified"] or r["exact"] or r["federation"]]
+            results = [
+                r for r in results if r["verified"] or r["exact"] or r["federation"]
+            ]
 
             has_exact_verified = any(r["exact"] and r["verified"] for r in results)
             if has_exact_verified:
@@ -746,4 +873,5 @@ class OktaClient:
 
             return results
         except Exception:
-            return []
+            log.exception("OIN catalog search failed")
+            raise

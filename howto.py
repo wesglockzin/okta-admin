@@ -5,7 +5,6 @@ from pathlib import Path
 import markdown
 from flask import Flask, render_template_string
 
-
 _PAGE_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
@@ -100,14 +99,19 @@ _PAGE_TEMPLATE = """\
 """
 
 
-def register_howto(app: Flask, *, tool_name: str, howto_filename: str = "HOWTO.md") -> None:
+def register_howto(
+    app: Flask, *, tool_name: str, howto_filename: str = "HOWTO.md"
+) -> None:
     @app.route("/howto")
     def howto():
         howto_path = Path(app.root_path) / howto_filename
         if not howto_path.exists():
             return (
-                f"<h1>HOWTO.md not found</h1><p>Looked at: <code>{howto_path}</code></p>"
-                f"<p>Each tool ships its own <code>{howto_filename}</code> next to <code>app.py</code>.</p>",
+                (
+                    f"<h1>HOWTO.md not found</h1><p>Looked at: <code>{howto_path}</code></p>"
+                    f"<p>Each tool ships its own <code>{howto_filename}</code> "
+                    "next to <code>app.py</code>.</p>"
+                ),
                 500,
             )
 

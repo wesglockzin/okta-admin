@@ -1,68 +1,158 @@
 from __future__ import annotations
 
+import io
 import logging
 import os
-import subprocess
+import re as _re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import requests
+from authlib.integrations.flask_client import OAuth
+from dotenv import load_dotenv
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-                    handlers=[logging.StreamHandler(sys.stdout)])
+from guards import is_allowed, origin_ok, safe_next
+from howto import register_howto
+from okta_client import InvalidOktaId, OktaClient
+from settings import ConfigError, auth_settings, load_orgs
+
+
+def make_session(tool_name: str, tool_version: str) -> requests.Session:
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": f"{tool_name}/{tool_version}",
+            "Accept": "application/json",
+        }
+    )
+    return session
+
+
+load_dotenv(Path(__file__).parent / ".env")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
 log = logging.getLogger("okta-admin")
+
+ACTION_LOG = Path(
+    os.environ.get("ACTION_LOG_PATH")
+    or Path(__file__).parent / "okta-admin-actions.log"
+)
 
 _alog = logging.getLogger("okta.admin.actions")
 _alog.setLevel(logging.INFO)
 _alog.propagate = False
-_ah = logging.FileHandler(Path(__file__).parent / "okta-admin-actions.log", encoding="utf-8")
-_ah.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+_ah = logging.FileHandler(ACTION_LOG, encoding="utf-8")
+_ah.setFormatter(
+    logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
 _alog.addHandler(_ah)
 _as = logging.StreamHandler(sys.stdout)
-_as.setFormatter(logging.Formatter("ACTION | %(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+_as.setFormatter(
+    logging.Formatter("ACTION | %(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
 _alog.addHandler(_as)
 
-def _log_action(env: str, action: str, label: str, outcome: str, detail: str = "") -> None:
-    _alog.info("%-5s| %-12s| %-40s| %-10s| %s",
-               env.upper()[:5], action[:12], label[:40], outcome[:10], detail)
 
-from authlib.integrations.flask_client import OAuth
-from dotenv import load_dotenv
-from flask import (
-    Flask, jsonify, redirect, render_template, render_template_string,
-    request, Response, session, stream_with_context, url_for,
-)
-from werkzeug.middleware.proxy_fix import ProxyFix
+def _log_action(
+    env: str, action: str, label: str, outcome: str, detail: str = ""
+) -> None:
+    _alog.info(
+        "%-5s| %-12s| %-40s| %-10s| %s",
+        env.upper(),
+        action[:12],
+        label[:40],
+        outcome[:10],
+        detail,
+    )
+
+
+def _fail(exc: Exception, context: str) -> str:
+    """Log an error with full detail on the server; return a client-safe message.
+
+    An Okta HTTP error is logged with its status and a truncated body. Clients
+    only ever see the status, never the upstream body or raw exception text.
+    """
+    resp = getattr(exc, "response", None)
+    if isinstance(exc, requests.HTTPError) and resp is not None:
+        log.warning(
+            "%s: Okta returned HTTP %s: %s",
+            context,
+            resp.status_code,
+            (resp.text or "")[:500],
+            exc_info=exc,
+        )
+        return f"Okta returned {resp.status_code}"
+    log.warning("%s failed: %s", context, exc, exc_info=exc)
+    return "Request failed; see the server log"
+
 
 try:
     import keyring as _keyring
-    KEYRING_SERVICE = "okta-app-admin"
+
+    KEYRING_SERVICE = os.environ.get("KEYRING_SERVICE", "okta-app-admin")
 except ImportError:
     _keyring = None
     KEYRING_SERVICE = ""
 
-load_dotenv(Path(__file__).parent / ".env")
-
-sys.path.insert(0, str(Path(__file__).parent))
-from okta_client import OKTA_ENVIRONMENTS, OktaClient
-from shared_http import make_session
-from shared_docs import register_howto
-
 APP_VERSION = "2.3.17"
 
-AZURE_STORAGE_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", "").strip()
+try:
+    OKTA_ENVIRONMENTS = load_orgs(os.environ)
+    _auth = auth_settings(os.environ)
+except ConfigError as exc:
+    log.error("configuration error: %s", exc)
+    sys.exit(1)
+DEFAULT_ENV = next(iter(OKTA_ENVIRONMENTS))
+ENV_LINKS_HTML = " · ".join(
+    f"<a href='/clear-progress/active?env={name}'>{name}</a>"
+    for name in OKTA_ENVIRONMENTS
+)
+ACCESS_DENIED_NOTICE = os.environ.get(
+    "ACCESS_DENIED_NOTICE",
+    "Access was denied by the identity provider. Check that you are allowed "
+    "to use this app, then click Sign in again.",
+)
+
+AZURE_STORAGE_CONNECTION_STRING = os.environ.get(
+    "AZURE_STORAGE_CONNECTION_STRING", ""
+).strip()
 TABLE_UNITS = os.environ.get("TABLE_UNITS", "appauthcounts")
 _units_table = None
 if AZURE_STORAGE_CONNECTION_STRING:
     try:
-        import urllib3 as _urllib3
-        _urllib3.disable_warnings()
-        from azure.data.tables import TableServiceClient
         from azure.core.pipeline.transport import RequestsTransport
-        _transport = RequestsTransport(connection_verify=False)
+        from azure.data.tables import TableServiceClient
+
+        _verify_tls = (
+            os.environ.get("AZURE_TLS_VERIFY", "true").strip().lower() != "false"
+        )
+        if not _verify_tls:
+            import urllib3 as _urllib3
+
+            log.warning(
+                "AZURE_TLS_VERIFY=false: TLS verification is off for Azure Tables"
+            )
+            _urllib3.disable_warnings()
+        _transport = RequestsTransport(connection_verify=_verify_tls)
         _tbl_svc = TableServiceClient.from_connection_string(
-            AZURE_STORAGE_CONNECTION_STRING, transport=_transport)
+            AZURE_STORAGE_CONNECTION_STRING, transport=_transport
+        )
         _units_table = _tbl_svc.get_table_client(TABLE_UNITS)
         log.info("Auth-count source: enabled (table %s)", TABLE_UNITS)
     except Exception:
@@ -96,20 +186,17 @@ def _get_auth_counts(env: str) -> tuple[dict[str, int], dict[str, int]]:
         log.exception("[%s] auth-count fetch failed", env)
     return by_client, by_label
 
-FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32).hex()
-OIDC_ISSUER = os.environ.get("OIDC_ISSUER", "").rstrip("/")
-OIDC_CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "")
-OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5002").rstrip("/")
+
+APP_BASE_URL = _auth["base_url"]
 OIDC_SCOPES = "openid email profile"
-OIDC_ENABLED = bool(OIDC_ISSUER and OIDC_CLIENT_ID and OIDC_CLIENT_SECRET)
+OIDC_ENABLED = _auth["enabled"]
+ALLOWED_EMAILS = _auth["allowed_emails"]
 
 if not OIDC_ENABLED:
-    log.warning("OIDC is NOT configured — auth gate disabled, app is open. "
-                "Set OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET to enable.")
+    log.warning("AUTH_MODE=none — auth gate disabled, app is open. Local use only.")
 
 app = Flask(__name__)
-app.secret_key = FLASK_SECRET_KEY
+app.secret_key = _auth["secret_key"]
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = APP_BASE_URL.startswith("https://")
@@ -119,15 +206,31 @@ oauth = OAuth(app)
 if OIDC_ENABLED:
     oauth.register(
         name="okta",
-        client_id=OIDC_CLIENT_ID,
-        client_secret=OIDC_CLIENT_SECRET,
-        server_metadata_url=f"{OIDC_ISSUER}/.well-known/openid-configuration",
+        client_id=_auth["client_id"],
+        client_secret=_auth["client_secret"],
+        server_metadata_url=f"{_auth['issuer']}/.well-known/openid-configuration",
         client_kwargs={"scope": OIDC_SCOPES, "code_challenge_method": "S256"},
     )
 
 PUBLIC_PATHS = {
-    "/health", "/login", "/oidc/login", "/oidc/callback", "/logout", "/favicon.ico",
+    "/health",
+    "/login",
+    "/oidc/login",
+    "/oidc/callback",
+    "/logout",
+    "/favicon.ico",
 }
+
+
+@app.before_request
+def _csrf_gate():
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return None
+    if not origin_ok(
+        request.headers.get("Origin"), request.headers.get("Referer"), request.host_url
+    ):
+        return jsonify(error="cross-site request rejected"), 403
+    return None
 
 
 @app.before_request
@@ -148,8 +251,8 @@ def get_token(var_name: str) -> str:
             val = _keyring.get_password(KEYRING_SERVICE, var_name)
             if val:
                 return val.strip()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - keyring backends raise many error types
+            log.warning("keyring lookup failed for %s; using environment", var_name)
     return os.environ.get(var_name, "").strip()
 
 
@@ -160,7 +263,9 @@ def _client(env: str):
     token = get_token(env_cfg["token_var"])
     if not token:
         return None, (jsonify({"error": f"{env_cfg['token_var']} is not set"}), 400)
-    return OktaClient(env_cfg["url"], token, make_session("OktaAdmin", APP_VERSION)), None
+    return OktaClient(
+        env_cfg["url"], token, make_session("OktaAdmin", APP_VERSION)
+    ), None
 
 
 register_howto(app, tool_name="Okta Admin")
@@ -168,8 +273,15 @@ register_howto(app, tool_name="Okta Admin")
 
 @app.route("/")
 def index():
-    resp = app.make_response(render_template("index.html", version=APP_VERSION,
-                                              user=session.get("user")))
+    resp = app.make_response(
+        render_template(
+            "index.html",
+            version=APP_VERSION,
+            user=session.get("user"),
+            envs=list(OKTA_ENVIRONMENTS),
+            default_env=DEFAULT_ENV,
+        )
+    )
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -189,9 +301,9 @@ LOGIN_HTML = """<!doctype html>
  a.btn{display:inline-block;background:#22c55e;color:#0f172a;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600}
  a.btn:hover{background:#16a34a;color:#fff}
  .err{color:#fca5a5;font-size:12px;margin-top:16px}
- .vpn{background:#1f2937;border:1px solid #f59e0b;color:#fbbf24;font-size:13px;margin-top:20px;padding:12px 14px;border-radius:8px;text-align:left;line-height:1.5}
- .vpn b{color:#fde68a}
- .vpn .raw{display:block;color:#94a3b8;font-size:11px;margin-top:8px;font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+ .denied{background:#1f2937;border:1px solid #f59e0b;color:#fbbf24;font-size:13px;margin-top:20px;padding:12px 14px;border-radius:8px;text-align:left;line-height:1.5}
+ .denied b{color:#fde68a}
+ .denied .raw{display:block;color:#94a3b8;font-size:11px;margin-top:8px;font-family:ui-monospace,Menlo,monospace;word-break:break-word}
  footer{position:fixed;bottom:16px;left:0;right:0;text-align:center;font-size:11px;color:#475569}
 </style></head><body>
 <div class="card">
@@ -200,7 +312,7 @@ LOGIN_HTML = """<!doctype html>
  <a class="btn" href="/oidc/login">Sign in</a>
  {% if error %}
    {% if 'access_denied' in error %}
-   <div class="vpn">This app is restricted to the internal network. Connect to the VPN client, then click Sign in again.<span class="raw">{{ error }}</span></div>
+   <div class="denied">{{ notice }}<span class="raw">{{ error }}</span></div>
    {% else %}<div class="err">{{ error }}</div>{% endif %}
  {% endif %}
 </div>
@@ -212,11 +324,13 @@ LOGIN_HTML = """<!doctype html>
 def login():
     if session.get("user"):
         return redirect(url_for("index"))
-    nxt = request.args.get("next")
+    nxt = safe_next(request.args.get("next"))
     if nxt:
         session["post_login_redirect"] = nxt
     err = session.pop("login_error", None)
-    return render_template_string(LOGIN_HTML, error=err, version=APP_VERSION)
+    return render_template_string(
+        LOGIN_HTML, error=err, version=APP_VERSION, notice=ACCESS_DENIED_NOTICE
+    )
 
 
 @app.get("/oidc/login")
@@ -231,23 +345,29 @@ def oidc_login():
 @app.get("/oidc/callback")
 def oidc_callback():
     if request.args.get("error"):
-        session["login_error"] = f"{request.args.get('error')}: {request.args.get('error_description', '')}"
+        session["login_error"] = (
+            f"{request.args.get('error')}: {request.args.get('error_description', '')}"
+        )
         return redirect(url_for("login"))
     try:
         token = oauth.okta.authorize_access_token()
-    except Exception as e:
+    except Exception:
         log.exception("OIDC token exchange failed")
-        session["login_error"] = f"token exchange failed: {e}"
+        session["login_error"] = "token exchange failed"
         return redirect(url_for("login"))
     claims = token.get("userinfo") or {}
     email = claims.get("email") or claims.get("preferred_username")
     if not email:
         session["login_error"] = "Email claim missing in id_token."
         return redirect(url_for("login"))
+    if not is_allowed(email, ALLOWED_EMAILS):
+        log.warning("sign-in refused: user is not in OIDC_ALLOWED_EMAILS")
+        session["login_error"] = "Your account is not authorised to use this app."
+        return redirect(url_for("login"))
     session["user"] = {
         "email": email,
         "name": claims.get("name"),
-        "login_time": datetime.now(timezone.utc).isoformat(),
+        "login_time": datetime.now(UTC).isoformat(),
     }
     redirect_to = session.pop("post_login_redirect", None) or url_for("index")
     return redirect(redirect_to)
@@ -266,7 +386,7 @@ def favicon():
 
 @app.route("/api/apps")
 def api_apps():
-    env = request.args.get("env", "dev")
+    env = request.args.get("env", DEFAULT_ENV)
     client, err = _client(env)
     if err:
         return err
@@ -290,42 +410,44 @@ def api_apps():
                 auth_count = auth_by_label.get(label, 0)
             else:
                 auth_count = 0
-            result.append({
-                "id": aid,
-                "label": label,
-                "sign_on_mode": sign_on_mode,
-                "status": a.get("status", ""),
-                "policy_id": pm.get("policy_id"),
-                "policy_name": pm.get("policy_name"),
-                "routing_rule_id": rm.get("rule_id"),
-                "routing_rule_name": rm.get("rule_name"),
-                "routing_policy_id": rm.get("policy_id"),
-                "dashboard_hidden": bool(hide.get("web")),
-                "note": (a.get("notes") or {}).get("admin") or "",
-                "auth_count": auth_count,
-                "has_everyone": None,
-            })
+            result.append(
+                {
+                    "id": aid,
+                    "label": label,
+                    "sign_on_mode": sign_on_mode,
+                    "status": a.get("status", ""),
+                    "policy_id": pm.get("policy_id"),
+                    "policy_name": pm.get("policy_name"),
+                    "routing_rule_id": rm.get("rule_id"),
+                    "routing_rule_name": rm.get("rule_name"),
+                    "routing_policy_id": rm.get("policy_id"),
+                    "dashboard_hidden": bool(hide.get("web")),
+                    "note": (a.get("notes") or {}).get("admin") or "",
+                    "auth_count": auth_count,
+                    "has_everyone": None,
+                }
+            )
         result.sort(key=lambda x: x["label"].lower())
         return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify({"error": _fail(e, f"list apps ({env})")}), 502
 
 
 @app.route("/api/policies")
 def api_policies():
-    env = request.args.get("env", "dev")
+    env = request.args.get("env", DEFAULT_ENV)
     client, err = _client(env)
     if err:
         return err
     try:
         return jsonify(client.list_access_policies())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify({"error": _fail(e, f"list policies ({env})")}), 502
 
 
 @app.route("/api/routing-rules")
 def api_routing_rules():
-    env = request.args.get("env", "dev")
+    env = request.args.get("env", DEFAULT_ENV)
     client, err = _client(env)
     if err:
         return err
@@ -333,20 +455,22 @@ def api_routing_rules():
         rules = []
         for policy in client.list_idp_routing_policies():
             for rule in client.list_routing_rules(policy["id"]):
-                rules.append({
-                    "id": rule["id"],
-                    "name": rule["name"],
-                    "policy_id": policy["id"],
-                })
+                rules.append(
+                    {
+                        "id": rule["id"],
+                        "name": rule["name"],
+                        "policy_id": policy["id"],
+                    }
+                )
         return jsonify(rules)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify({"error": _fail(e, f"list routing rules ({env})")}), 502
 
 
 @app.route("/api/toggle-status", methods=["POST"])
 def api_toggle_status():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_id = data.get("app_id", "").strip()
     action = data.get("action", "")
 
@@ -363,15 +487,19 @@ def api_toggle_status():
             client.deactivate_app(app_id)
         _log_action(env, action.upper(), app_id, "ok")
         return jsonify({"status": "ACTIVE" if action == "activate" else "INACTIVE"})
-    except Exception as e:
-        _log_action(env, action.upper(), app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 502
+    except InvalidOktaId as e:
+        # Input validation (a malformed id): safe to show the caller.
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"{action} app {app_id}")
+        _log_action(env, action.upper(), app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 502
 
 
 @app.route("/api/assign-policy", methods=["POST"])
 def api_assign_policy():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_ids = data.get("app_ids", [])
     policy_id = data.get("policy_id", "").strip()
 
@@ -387,16 +515,16 @@ def api_assign_policy():
             client.assign_policy_to_app(aid, policy_id)
             results[aid] = "ok"
             _log_action(env, "POLICY", aid, "ok", f"policy={policy_id}")
-        except Exception as e:
-            results[aid] = str(e)
-            _log_action(env, "POLICY", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = _fail(e, f"assign policy to {aid}")
+            _log_action(env, "POLICY", aid, "FAILED", results[aid])
     return jsonify(results)
 
 
 @app.route("/api/assign-routing-rule", methods=["POST"])
 def api_assign_routing_rule():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_ids = data.get("app_ids", [])
     rule_id = data.get("rule_id", "").strip()
     rule_policy_id = data.get("rule_policy_id", "").strip()
@@ -417,16 +545,16 @@ def api_assign_routing_rule():
                 client.add_app_to_routing_rule(rule_policy_id, rule_id, aid)
             results[aid] = "ok"
             _log_action(env, f"ROUTING-{action.upper()}", aid, "ok", f"rule={rule_id}")
-        except Exception as e:
-            results[aid] = str(e)
-            _log_action(env, f"ROUTING-{action.upper()}", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = _fail(e, f"routing rule {action} for {aid}")
+            _log_action(env, f"ROUTING-{action.upper()}", aid, "FAILED", results[aid])
     return jsonify(results)
 
 
 @app.route("/api/rename", methods=["POST"])
 def api_rename():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_id = data.get("app_id", "").strip()
     new_label = data.get("label", "").strip()
     if not app_id or not new_label:
@@ -438,15 +566,16 @@ def api_rename():
         client.rename_app(app_id, new_label)
         _log_action(env, "RENAME", new_label, "ok", f"id={app_id}")
         return jsonify({"ok": True, "label": new_label})
-    except Exception as e:
-        _log_action(env, "RENAME", app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"rename app {app_id}")
+        _log_action(env, "RENAME", app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 502
 
 
 @app.route("/api/note", methods=["POST"])
 def api_note():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_id = data.get("app_id", "").strip()
     note = data.get("note", "")
     if not app_id:
@@ -456,17 +585,20 @@ def api_note():
         return err
     try:
         client.set_app_note(app_id, note)
-        _log_action(env, "NOTE", app_id, "ok", f'"{note[:60]}"' if note else "(cleared)")
+        _log_action(
+            env, "NOTE", app_id, "ok", f'"{note[:60]}"' if note else "(cleared)"
+        )
         return jsonify({"ok": True, "note": note})
-    except Exception as e:
-        _log_action(env, "NOTE", app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"set note on {app_id}")
+        _log_action(env, "NOTE", app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 502
 
 
 @app.route("/api/visibility", methods=["POST"])
 def api_visibility():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_ids = data.get("app_ids", [])
     hide = data.get("hide")
     if not app_ids or hide is None:
@@ -480,17 +612,18 @@ def api_visibility():
             client.set_app_visibility(aid, bool(hide))
             results[aid] = "ok"
             _log_action(env, "VISIBILITY", aid, "ok", "hidden" if hide else "visible")
-        except Exception as e:
-            results[aid] = str(e)
-            _log_action(env, "VISIBILITY", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = _fail(e, f"set visibility on {aid}")
+            _log_action(env, "VISIBILITY", aid, "FAILED", results[aid])
     return jsonify(results)
 
 
 @app.route("/api/check-everyone", methods=["POST"])
 def api_check_everyone():
     import time
+
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_ids = data.get("app_ids", [])
     if not app_ids:
         return jsonify({"error": "app_ids required"}), 400
@@ -502,11 +635,17 @@ def api_check_everyone():
     except requests.HTTPError as e:
         sc = e.response.status_code if e.response is not None else None
         if sc == 429:
-            return jsonify({"_error": "Rate limited fetching group catalog. Try again shortly.",
-                            "_rate_limited": True})
-        return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
-    except Exception as e:
-        return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
+            return jsonify(
+                {
+                    "_error": "Rate limited fetching group catalog. Try again shortly.",
+                    "_rate_limited": True,
+                }
+            )
+        msg = _fail(e, "fetch group catalog")
+        return jsonify({"error": f"Failed to fetch group catalog: {msg}"}), 502
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, "fetch group catalog")
+        return jsonify({"error": f"Failed to fetch group catalog: {msg}"}), 502
 
     results = {}
     for i, aid in enumerate(app_ids):
@@ -518,8 +657,10 @@ def api_check_everyone():
                 results["_error"] = f"Rate limited after {i} apps. Try again shortly."
                 results["_rate_limited"] = True
                 break
+            _fail(e, f"everyone check for {aid}")
             results[aid] = None
         except Exception:
+            log.warning("everyone check failed for app %s", aid, exc_info=True)
             results[aid] = None
         if i < len(app_ids) - 1:
             time.sleep(0.1)
@@ -529,7 +670,7 @@ def api_check_everyone():
 @app.route("/api/clear-assignments", methods=["POST"])
 def api_clear_assignments():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_ids = data.get("app_ids", [])
     if not app_ids:
         return jsonify({"error": "app_ids required"}), 400
@@ -548,9 +689,10 @@ def api_clear_assignments():
                 f"will_orphan={summary['group_scope_will_orphan']}"
             )
             _log_action(env, "CLEAR_ASSIGNMENTS", aid, "ok", detail)
-        except Exception as e:
-            results[aid] = {"error": str(e)}
-            _log_action(env, "CLEAR_ASSIGNMENTS", aid, "FAILED", str(e))
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            msg = _fail(e, f"clear assignments for {aid}")
+            results[aid] = {"error": msg}
+            _log_action(env, "CLEAR_ASSIGNMENTS", aid, "FAILED", msg)
     return jsonify(results)
 
 
@@ -572,17 +714,20 @@ def _get_group_detail(client, env: str, group_id: str) -> dict:
         _group_detail_cache[key] = detail
         return detail
     except Exception:
+        log.warning("group lookup failed for %s", group_id, exc_info=True)
         return {"id": group_id, "name": "?", "type": "?"}
 
 
 @app.route("/clear-progress")
 def clear_progress_page():
-    return render_template("clear_progress.html", version=APP_VERSION)
+    return render_template(
+        "clear_progress.html", version=APP_VERSION, default_env=DEFAULT_ENV
+    )
 
 
 @app.route("/clear-progress/active")
 def clear_progress_active():
-    env = (request.args.get("env") or "dev").lower()
+    env = (request.args.get("env") or DEFAULT_ENV).lower()
     if env not in OKTA_ENVIRONMENTS:
         return jsonify(error=f"Unknown env: {env}"), 400
     try:
@@ -590,7 +735,7 @@ def clear_progress_active():
     except ValueError:
         hours = 24
 
-    log_file = Path(__file__).parent / "okta-admin-actions.log"
+    log_file = ACTION_LOG
     cutoff = datetime.now() - timedelta(hours=hours)
     apps: dict[str, dict] = {}
     if log_file.exists():
@@ -603,7 +748,6 @@ def clear_progress_active():
             action = parts[2]
             app_id = parts[3]
             outcome = parts[4]
-            detail = parts[5] if len(parts) >= 6 else ""
             if action != "CLEAR_ASSIGN":
                 continue
             if env_col != env:
@@ -623,19 +767,20 @@ def clear_progress_active():
     if not apps:
         return (
             f"<p>No CLEAR_ASSIGNMENTS activity in last {hours}h for env={env}.</p>"
-            f"<p><a href='/clear-progress/active?env=prod'>prod</a> · "
-            f"<a href='/clear-progress/active?env=stg'>stg</a> · "
-            f"<a href='/clear-progress/active?env=dev'>dev</a></p>"
+            f"<p>{ENV_LINKS_HTML}</p>"
         ), 200
 
     app_ids = list(apps.keys())
     removed_ids = list(apps.keys())
     from urllib.parse import urlencode
-    qs = urlencode({
-        "env": env,
-        "app_ids": ",".join(app_ids),
-        "removed": ",".join(removed_ids),
-    })
+
+    qs = urlencode(
+        {
+            "env": env,
+            "app_ids": ",".join(app_ids),
+            "removed": ",".join(removed_ids),
+        }
+    )
     resp = redirect(f"/clear-progress?{qs}")
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
@@ -645,7 +790,7 @@ def clear_progress_active():
 @app.route("/api/clear-progress/log-quiescence", methods=["POST"])
 def api_clear_progress_log_quiescence():
     data = request.get_json() or {}
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_id = data.get("app_id")
     minutes = int(data.get("minutes") or 5)
     if not app_id:
@@ -671,14 +816,14 @@ def api_clear_progress_log_quiescence():
             final_count=final_count,
             group_member_total=group_member_total,
         )
-    except Exception as e:
-        return jsonify(error=str(e)), 500
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        return jsonify(error=_fail(e, f"clear-progress quiescence for {app_id}")), 500
 
 
 @app.route("/api/clear-progress/status", methods=["POST"])
 def api_clear_progress_status():
     data = request.get_json()
-    env = data.get("env", "dev")
+    env = data.get("env", DEFAULT_ENV)
     app_ids = data.get("app_ids", [])
     if not app_ids:
         return jsonify({"error": "app_ids required"}), 400
@@ -698,7 +843,8 @@ def api_clear_progress_status():
                 by_scope[sc] = by_scope.get(sc, 0) + 1
             groups_detail = [
                 _get_group_detail(client, env, ag.get("id"))
-                for ag in groups if ag.get("id")
+                for ag in groups
+                if ag.get("id")
             ]
             results[aid] = {
                 "label": meta.get("label"),
@@ -713,11 +859,16 @@ def api_clear_progress_status():
             sc = e.response.status_code if e.response is not None else None
             if sc == 429:
                 any_rate_limited = True
-                results[aid] = {"error": "rate-limited", "rate_limited": True, "http": 429}
+                results[aid] = {
+                    "error": "rate-limited",
+                    "rate_limited": True,
+                    "http": 429,
+                }
             else:
-                results[aid] = {"error": f"HTTP {sc}: {str(e)[:200]}"}
-        except Exception as e:
-            results[aid] = {"error": str(e)[:200]}
+                results[aid] = {"error": _fail(e, f"clear-progress status for {aid}")}
+        except Exception as e:  # noqa: BLE001 - per-app failure, logged by _fail
+            results[aid] = {"error": _fail(e, f"clear-progress status for {aid}")}
+
     def _is_done(r: dict) -> bool:
         if r.get("error"):
             return False
@@ -744,17 +895,9 @@ def api_clear_progress_status():
     return resp
 
 
-import csv
-import io
-import os
-import re as _re
-import secrets
-import string
-import subprocess
-import tempfile
 def _safe_filename(label: str) -> str:
-    slug = _re.sub(r'[^\w\s-]', '', label).strip()
-    slug = _re.sub(r'[\s]+', '-', slug)
+    slug = _re.sub(r"[^\w\s-]", "", label).strip()
+    slug = _re.sub(r"[\s]+", "-", slug)
     return slug[:60] or "app"
 
 
@@ -874,12 +1017,12 @@ def _detect_sp_vendor(cfg: dict) -> str:
 
 _SP_VENDOR_SNIPPETS = {
     "shibboleth": _SP_VENDOR_SHIBBOLETH,
-    "aws":        _SP_VENDOR_AWS,
-    "microsoft":  _SP_VENDOR_MICROSOFT,
-    "google":     _SP_VENDOR_GOOGLE,
+    "aws": _SP_VENDOR_AWS,
+    "microsoft": _SP_VENDOR_MICROSOFT,
+    "google": _SP_VENDOR_GOOGLE,
     "salesforce": _SP_VENDOR_SALESFORCE,
-    "oin":        _SP_VENDOR_OIN,
-    "generic":    _SP_VENDOR_GENERIC,
+    "oin": _SP_VENDOR_OIN,
+    "generic": _SP_VENDOR_GENERIC,
 }
 
 
@@ -931,9 +1074,10 @@ def _render_sp_config_text(cfg: dict, env: str) -> str:
 @app.route("/api/sp-config", methods=["POST"])
 def api_sp_config():
     from flask import send_file
-    data    = request.get_json() or {}
-    env     = data.get("env", "dev")
-    app_id  = data.get("app_id")
+
+    data = request.get_json() or {}
+    env = data.get("env", DEFAULT_ENV)
+    app_id = data.get("app_id")
     if not app_id:
         return jsonify({"error": "app_id required"}), 400
 
@@ -945,14 +1089,16 @@ def api_sp_config():
         cfg = client.get_saml_config(app_id)
         if cfg.get("status") != "ACTIVE":
             _log_action(env, "SP_CONFIG", app_id, "skipped", "inactive")
-            return jsonify({"error": f"{cfg.get('label', app_id)}: skipped (INACTIVE)"}), 400
+            return jsonify(
+                {"error": f"{cfg.get('label', app_id)}: skipped (INACTIVE)"}
+            ), 400
         text = _render_sp_config_text(cfg, env)
-        slug = _safe_filename(cfg['label'])
-        _log_action(env, "SP_CONFIG", cfg['label'], "ok")
-    except Exception as e:
-        log.warning("sp-config failed for %s: %s", app_id, e)
-        _log_action(env, "SP_CONFIG", app_id, "FAILED", str(e))
-        return jsonify({"error": str(e)}), 500
+        slug = _safe_filename(cfg["label"])
+        _log_action(env, "SP_CONFIG", cfg["label"], "ok")
+    except Exception as e:  # noqa: BLE001 - route boundary, logged by _fail
+        msg = _fail(e, f"sp-config for {app_id}")
+        _log_action(env, "SP_CONFIG", app_id, "FAILED", msg)
+        return jsonify({"error": msg}), 500
 
     buf = io.BytesIO(text.encode("utf-8"))
     return send_file(
@@ -965,7 +1111,7 @@ def api_sp_config():
 
 @app.route("/logs")
 def logs_page():
-    log_file = Path(__file__).parent / "okta-admin-actions.log"
+    log_file = ACTION_LOG
     lines = []
     if log_file.exists():
         with open(log_file, encoding="utf-8") as f:
@@ -973,8 +1119,12 @@ def logs_page():
     return render_template("logs.html", lines=lines[-500:])
 
 
+def main() -> None:
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "5002"))
+    log.info("Okta Admin v%s listening on http://%s:%s", APP_VERSION, host, port)
+    app.run(host=host, port=port, threaded=True)
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5002))
-    print(f"\n  Okta Admin v{APP_VERSION}")
-    print(f"  Open: http://localhost:{port}\n")
-    app.run(host="127.0.0.1", port=port, debug=True, use_reloader=True, threaded=True)
+    main()
