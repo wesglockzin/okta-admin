@@ -18,7 +18,7 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
-      - run: pip-audit
+      - run: pip-audit --skip-editable -r requirements.txt
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

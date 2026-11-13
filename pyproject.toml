@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 keyring = ["keyring>=24,<26"]
-dev = ["pytest>=8,<10", "ruff>=0.5"]
+dev = ["pytest>=9.0.3", "ruff>=0.5"]
 
 [project.scripts]
 okta-admin = "app:main"
