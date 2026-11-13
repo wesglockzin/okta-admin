@@ -349,7 +349,7 @@ def api_apps():
             })
         result.sort(key=lambda x: x["label"].lower())
         return jsonify(result)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
         return jsonify({"error": str(e)}), 502
 
 
@@ -361,7 +361,7 @@ def api_policies():
         return err
     try:
         return jsonify(client.list_access_policies())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
         return jsonify({"error": str(e)}), 502
 
 
@@ -381,7 +381,7 @@ def api_routing_rules():
                     "policy_id": policy["id"],
                 })
         return jsonify(rules)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
         return jsonify({"error": str(e)}), 502
 
 
@@ -405,7 +405,7 @@ def api_toggle_status():
             client.deactivate_app(app_id)
         _log_action(env, action.upper(), app_id, "ok")
         return jsonify({"status": "ACTIVE" if action == "activate" else "INACTIVE"})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, failure logged and returned
         _log_action(env, action.upper(), app_id, "FAILED", str(e))
         return jsonify({"error": str(e)}), 502
 
@@ -429,7 +429,7 @@ def api_assign_policy():
             client.assign_policy_to_app(aid, policy_id)
             results[aid] = "ok"
             _log_action(env, "POLICY", aid, "ok", f"policy={policy_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
             results[aid] = str(e)
             _log_action(env, "POLICY", aid, "FAILED", str(e))
     return jsonify(results)
@@ -459,7 +459,7 @@ def api_assign_routing_rule():
                 client.add_app_to_routing_rule(rule_policy_id, rule_id, aid)
             results[aid] = "ok"
             _log_action(env, f"ROUTING-{action.upper()}", aid, "ok", f"rule={rule_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
             results[aid] = str(e)
             _log_action(env, f"ROUTING-{action.upper()}", aid, "FAILED", str(e))
     return jsonify(results)
@@ -480,7 +480,7 @@ def api_rename():
         client.rename_app(app_id, new_label)
         _log_action(env, "RENAME", new_label, "ok", f"id={app_id}")
         return jsonify({"ok": True, "label": new_label})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, failure logged and returned
         _log_action(env, "RENAME", app_id, "FAILED", str(e))
         return jsonify({"error": str(e)}), 502
 
@@ -500,7 +500,7 @@ def api_note():
         client.set_app_note(app_id, note)
         _log_action(env, "NOTE", app_id, "ok", f'"{note[:60]}"' if note else "(cleared)")
         return jsonify({"ok": True, "note": note})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, failure logged and returned
         _log_action(env, "NOTE", app_id, "FAILED", str(e))
         return jsonify({"error": str(e)}), 502
 
@@ -522,7 +522,7 @@ def api_visibility():
             client.set_app_visibility(aid, bool(hide))
             results[aid] = "ok"
             _log_action(env, "VISIBILITY", aid, "ok", "hidden" if hide else "visible")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
             results[aid] = str(e)
             _log_action(env, "VISIBILITY", aid, "FAILED", str(e))
     return jsonify(results)
@@ -547,7 +547,7 @@ def api_check_everyone():
             return jsonify({"_error": "Rate limited fetching group catalog. Try again shortly.",
                             "_rate_limited": True})
         return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
         return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
 
     results = {}
@@ -561,7 +561,7 @@ def api_check_everyone():
                 results["_rate_limited"] = True
                 break
             results[aid] = None
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort lookup, app reported as unknown
             results[aid] = None
         if i < len(app_ids) - 1:
             time.sleep(0.1)
@@ -590,7 +590,7 @@ def api_clear_assignments():
                 f"will_orphan={summary['group_scope_will_orphan']}"
             )
             _log_action(env, "CLEAR_ASSIGNMENTS", aid, "ok", detail)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
             results[aid] = {"error": str(e)}
             _log_action(env, "CLEAR_ASSIGNMENTS", aid, "FAILED", str(e))
     return jsonify(results)
@@ -613,7 +613,7 @@ def _get_group_detail(client, env: str, group_id: str) -> dict:
         }
         _group_detail_cache[key] = detail
         return detail
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort lookup, placeholder returned
         return {"id": group_id, "name": "?", "type": "?"}
 
 
@@ -710,7 +710,7 @@ def api_clear_progress_log_quiescence():
             final_count=final_count,
             group_member_total=group_member_total,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, error returned as 500
         return jsonify(error=str(e)), 500
 
 
@@ -755,7 +755,7 @@ def api_clear_progress_status():
                 results[aid] = {"error": "rate-limited", "rate_limited": True, "http": 429}
             else:
                 results[aid] = {"error": f"HTTP {sc}: {str(e)[:200]}"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
             results[aid] = {"error": str(e)[:200]}
     def _is_done(r: dict) -> bool:
         if r.get("error"):
@@ -980,7 +980,7 @@ def api_sp_config():
         text = _render_sp_config_text(cfg, env)
         slug = _safe_filename(cfg['label'])
         _log_action(env, "SP_CONFIG", cfg['label'], "ok")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - route boundary, logged and returned as 500
         log.warning("sp-config failed for %s: %s", app_id, e)
         _log_action(env, "SP_CONFIG", app_id, "FAILED", str(e))
         return jsonify({"error": str(e)}), 500

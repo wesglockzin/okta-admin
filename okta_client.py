@@ -6,6 +6,7 @@ import textwrap
 import time
 import urllib.parse
 import xml.etree.ElementTree as _ET
+from typing import ClassVar
 
 import requests
 
@@ -95,7 +96,7 @@ class OktaClient:
                 )
                 for app in apps:
                     mapping[app["id"]] = {"policy_id": pid, "policy_name": p["name"]}
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one bad policy must not stop the map; logged
                 _log.getLogger(__name__).warning(
                     "policy->app fetch failed for policy %s (%s); its apps are "
                     "OMITTED from the policy map", pid, e)
@@ -224,8 +225,8 @@ class OktaClient:
         return items, bool(self._next_link(resp))
 
     def recent_membership_remove_count(self, app_id: str, minutes: int = 5) -> int:
-        from datetime import datetime, timedelta, timezone
-        since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).strftime(
+        from datetime import UTC, datetime, timedelta
+        since = (datetime.now(UTC) - timedelta(minutes=minutes)).strftime(
             "%Y-%m-%dT%H:%M:%S.000Z"
         )
         filt = (
@@ -311,7 +312,7 @@ class OktaClient:
             return True, None
         try:
             err = (resp.json() or {}).get("errorCode") or "?"
-        except Exception:
+        except Exception:  # noqa: BLE001 - unparseable error body, fall back to "?"
             err = "?"
         return False, f"HTTP {resp.status_code} {err}"
 
@@ -365,7 +366,7 @@ class OktaClient:
             for a in existing:
                 if a.get("name") == oin_key and a.get("label") == label:
                     return a
-        except Exception:
+        except Exception:  # noqa: BLE001 - preflight is best-effort; logged
             import logging as _log
             _log.getLogger(__name__).warning(
                 "create_oin_instance preflight lookup failed for %r; proceeding to create", label)
@@ -429,7 +430,7 @@ class OktaClient:
                 }
                 filled: list[str] = []
                 for field in missing:
-                    if field in derived and derived[field]:
+                    if derived.get(field):
                         payload["settings"]["app"][field] = derived[field]
                         filled.append(f"{field}={derived[field]!r}")
 
@@ -458,7 +459,7 @@ class OktaClient:
         if resp.status_code in (400, 403):
             try:
                 err = resp.json() or {}
-            except Exception:
+            except Exception:  # noqa: BLE001 - unparseable error body, treated as empty
                 err = {}
             code = err.get("errorCode", "")
             if code in ("E0000006", "E0000015") or resp.status_code == 401:
@@ -541,7 +542,7 @@ class OktaClient:
         if not resp.ok:
             try:
                 detail = resp.json().get("errorSummary") or resp.text[:200]
-            except Exception:
+            except Exception:  # noqa: BLE001 - unparseable error body, use raw text
                 detail = resp.text[:200]
             raise RuntimeError(f"{resp.status_code} {detail}")
         return resp.json()
@@ -556,7 +557,7 @@ class OktaClient:
             domains = resp.json().get("domains", [])
             custom = next((d["domain"] for d in domains if d.get("id") != "default"), None)
             self._sso_domain = f"https://{custom}" if custom else self.base_url
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - falls back to base URL; logged
             import logging as _log
             _log.getLogger(__name__).warning("domains fetch failed: %s", e)
             self._sso_domain = self.base_url
@@ -606,7 +607,7 @@ class OktaClient:
 
             return {'idp_entity_id': idp_entity_id, 'idp_sso_url': idp_sso_url,
                     'cert_pem': cert_pem, 'key_id': key_id, 'error': ''}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - error is logged and returned in the result
             import logging as _log
             _log.getLogger(__name__).warning("metadata fetch/parse failed for %s: %s", api_metadata_url, e)
             return {**empty, 'error': f"{type(e).__name__}: {e}"}
@@ -654,9 +655,14 @@ class OktaClient:
         }
 
 
-    _SSO_MODES = {"SAML_2_0", "OPENID_CONNECT", "AUTO_LOGIN", "SECURE_PASSWORD_STORE"}
-    _FEDERATION_MODES = {"SAML_2_0", "OPENID_CONNECT"}
-    _SSO_KEYWORDS = {"saml", "sso", "single sign-on", "openid", "oidc"}
+    _SSO_MODES: ClassVar[set[str]] = {
+        "SAML_2_0",
+        "OPENID_CONNECT",
+        "AUTO_LOGIN",
+        "SECURE_PASSWORD_STORE",
+    }
+    _FEDERATION_MODES: ClassVar[set[str]] = {"SAML_2_0", "OPENID_CONNECT"}
+    _SSO_KEYWORDS: ClassVar[set[str]] = {"saml", "sso", "single sign-on", "openid", "oidc"}
 
     def _oin_has_sso(self, item: dict) -> bool:
         modes = set(item.get("signOnModes") or [])
@@ -671,7 +677,7 @@ class OktaClient:
         r'\b(gov(ernment)?|fed(eral)?)\b', re.IGNORECASE
     )
 
-    _LABEL_SEARCH_MAP: dict[str, str] = {}
+    _LABEL_SEARCH_MAP: ClassVar[dict[str, str]] = {}
 
     def search_oin_catalog(self, name: str, limit: int = 20) -> list[dict]:
         name_stripped = name.strip()
@@ -738,5 +744,5 @@ class OktaClient:
                 results = [r for r in results if r["exact"] or r["gov"]]
 
             return results
-        except Exception:
+        except Exception:  # noqa: BLE001 - catalog search is best-effort, empty on failure
             return []
