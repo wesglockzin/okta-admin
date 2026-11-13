@@ -185,6 +185,7 @@ class OktaClient:
             self._put_rule(policy_id, rule_id, rule)
 
     def activate_app(self, app_id: str) -> None:
+        app_id = self._safe_id(app_id)
         resp = self._session.post(
             f"{self.base_url}/api/v1/apps/{app_id}/lifecycle/activate"
         )

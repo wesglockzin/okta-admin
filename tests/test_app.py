@@ -117,7 +117,8 @@ def test_write_from_same_site_reaches_handler(client):
     assert resp.status_code == 400
 
 
-def test_toggle_with_malformed_id_is_400_with_message(client, monkeypatch):
+@pytest.mark.parametrize("action", ["activate", "deactivate"])
+def test_toggle_with_malformed_id_is_400_with_message(client, monkeypatch, action):
     def fake_client(env):
         session = requests.Session()
         return app_module.OktaClient(
@@ -125,7 +126,7 @@ def test_toggle_with_malformed_id_is_400_with_message(client, monkeypatch):
         ), None
 
     monkeypatch.setattr(app_module, "_client", fake_client)
-    body = {"action": "deactivate", "app_id": "a/b"}
+    body = {"action": action, "app_id": "a/b"}
     resp = client.post("/api/toggle-status", json=body, headers=SAME_SITE)
     assert resp.status_code == 400
     assert "invalid Okta id" in resp.get_json()["error"]
