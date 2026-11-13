@@ -60,6 +60,6 @@ Behind a reverse proxy, the proxy must forward `X-Forwarded-Host` and
 - **Everyone allowed in can write to every org.** Authorization is an email allow-list;
   there are no roles. API tokens carry whatever rights they were issued with.
 - **CSRF protection is an Origin/Referer check** on every write request.
-- **Dependencies are range-pinned but there is no lockfile yet.**
+- **Dependencies are range-pinned, and `uv.lock` is committed and checked in CI.**
 - **The action log is a local file** and is not shared between containers.
 - **Errors shown in the browser are generic** (for example "Okta returned 403"). The status and a truncated upstream body are written to the server log.

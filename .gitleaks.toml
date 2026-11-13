@@ -23,12 +23,6 @@ tags = ["sanitization"]
 
 [[rules]]
 id = "okta-org-hostname"
-description = "A real Okta org host name (placeholders are allowlisted below)"
+description = "A real Okta org host name"
 regex = '''(?i)\b[a-z0-9-]+\.(?:okta|oktapreview)\.com\b'''
 tags = ["sanitization"]
-
-[[allowlists]]
-description = "Placeholder Okta host in the settings example"
-condition = "AND"
-paths = ['''^\.env\.example$''']
-regexes = ['''your-org\.okta\.com''']
