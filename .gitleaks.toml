@@ -3,6 +3,13 @@ title = "okta-admin gitleaks rules"
 [extend]
 useDefault = true
 
+# Narrow exemption for a placeholder that exists only in earlier commits
+# (history scans on pull requests still see it). The current tree uses
+# https://example.invalid instead.
+[allowlist]
+description = "Retired placeholder host in branch history"
+regexes = ['''your-org\.okta\.com''']
+
 [[rules]]
 id = "private-ip-address"
 description = "Private (RFC 1918) IP address"
