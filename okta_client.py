@@ -852,5 +852,6 @@ class OktaClient:
                 results = [r for r in results if r["exact"] or r["gov"]]
 
             return results
-        except Exception:  # noqa: BLE001 - catalog search is best-effort, empty on failure
-            return []
+        except Exception:
+            log.exception("OIN catalog search failed")
+            raise
