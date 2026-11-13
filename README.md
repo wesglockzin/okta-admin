@@ -18,7 +18,7 @@ changes on inactive apps, which reads as a misleading failure in a batch.
 cp .env.example .env     # fill in the required settings below
 docker compose up        # http://localhost:8080
 ```
-Without Docker: `pip install -e ".[keyring]"` then `okta-admin` (http://127.0.0.1:5002).
+Without Docker (the editable `-e` install is required, because the templates and HOWTO.md are read from the checkout): `pip install -e ".[keyring]"` then `okta-admin` (http://127.0.0.1:5002).
 To keep API tokens in the OS keyring instead of the environment, run `okta-admin-setup-tokens`.
 
 Tests and lint: `pip install -e ".[dev]"`, then `pytest`, `ruff check .`, `ruff format --check .`.

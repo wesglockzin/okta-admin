@@ -54,6 +54,15 @@ def test_load_orgs_rejects_odd_name():
         load_orgs({"OKTA_ADMIN_ORGS": "a/b"})
 
 
+def test_load_orgs_rejects_names_sharing_settings():
+    env = {
+        "OKTA_ADMIN_ORGS": "eu-prod,eu_prod",
+        "OKTA_ADMIN_EU_PROD_URL": "https://x.example.test",
+    }
+    with pytest.raises(ConfigError, match="same settings"):
+        load_orgs(env)
+
+
 def test_auth_refuses_when_unset():
     with pytest.raises(ConfigError, match="OIDC_ISSUER"):
         auth_settings({})

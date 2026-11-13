@@ -28,10 +28,17 @@ def load_orgs(environ: Mapping[str, str] = os.environ) -> dict[str, dict[str, st
     if not names:
         raise ConfigError("OKTA_ADMIN_ORGS is not set (comma-separated org names)")
     orgs: dict[str, dict[str, str]] = {}
+    seen: dict[str, str] = {}
     for name in names:
         if not ORG_NAME.fullmatch(name):
             raise ConfigError(f"OKTA_ADMIN_ORGS: invalid org name {name!r}")
         key = _var_key(name)
+        if key in seen and seen[key] != name:
+            raise ConfigError(
+                f"OKTA_ADMIN_ORGS: {name!r} and {seen[key]!r} use the same settings"
+                f" (OKTA_ADMIN_{key}_*)"
+            )
+        seen[key] = name
         url_var = f"OKTA_ADMIN_{key}_URL"
         url = environ.get(url_var, "").strip().rstrip("/")
         if not url:
