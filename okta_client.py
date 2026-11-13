@@ -8,12 +8,6 @@ import xml.etree.ElementTree as _ET
 
 import requests
 
-OKTA_ENVIRONMENTS = {
-    "dev":  {"url": "https://host.example.com", "token_var": "OKTA_ADMIN_DEV_API_TOKEN"},
-    "stg":  {"url": "https://host.example.com", "token_var": "OKTA_ADMIN_STG_API_TOKEN"},
-    "prod": {"url": "https://host.example.com", "token_var": "OKTA_ADMIN_PROD_API_TOKEN"},
-}
-
 APP_SIGN_ON_MODES = {
     "SAML_2_0", "SAML_1_1", "OPENID_CONNECT",
     "BROWSER_PLUGIN", "AUTO_LOGIN", "SECURE_PASSWORD_STORE", "BOOKMARK",
@@ -171,12 +165,6 @@ class OktaClient:
     def activate_app(self, app_id: str) -> None:
         resp = self._session.post(
             f"{self.base_url}/api/v1/apps/{app_id}/lifecycle/activate"
-        )
-        resp.raise_for_status()
-
-    def deactivate_app(self, app_id: str) -> None:
-        resp = self._session.post(
-            f"{self.base_url}/api/v1/apps/{app_id}/lifecycle/deactivate"
         )
         resp.raise_for_status()
 

@@ -220,9 +220,9 @@
         </hgroup>
         <div class="env-bar">
             <span style="font-size:0.82em; color:var(--pico-muted-color)">Env:</span>
-            <button class="env-btn active" data-env="dev" onclick="setEnv('dev')">DEV</button>
-            <button class="env-btn" data-env="stg" onclick="setEnv('stg')">STG</button>
-            <button class="env-btn env-prod" data-env="prod" onclick="setEnv('prod')">PROD</button>
+            {% for name in envs %}
+            <button class="env-btn{% if name == default_env %} active{% endif %}{% if name == 'prod' %} env-prod{% endif %}" data-env="{{ name }}" onclick="setEnv('{{ name }}')">{{ name | upper }}</button>
+            {% endfor %}
             <a href="/logs" style="padding:0.25rem 1rem; font-size:0.85em; border-radius:999px; border:1px solid #bbb; background:#f0f0f0; color:#333; text-decoration:none">Logs</a>
             <button onclick="loadApps()" style="margin:0; padding:0.25rem 1rem; font-size:0.85em">Load Apps</button>
         </div>
@@ -344,7 +344,7 @@
 let allApps = [];
 let filteredApps = [];
 let selectedIds = new Set();
-let currentEnv = 'dev';
+let currentEnv = '{{ default_env }}';
 let typeFilter = 'all';
 let statusFilter = 'all';
 let everyoneFilter = false;

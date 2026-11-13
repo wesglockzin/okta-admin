@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py okta_client.py shared_http.py shared_docs.py HOWTO.md ./
+COPY app.py guards.py okta_client.py settings.py shared_http.py shared_docs.py HOWTO.md ./
 COPY templates ./templates
 
 RUN chown -R appuser:appuser /app
@@ -23,6 +23,6 @@ USER appuser
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)" || exit 1
+    CMD python -c "import os, urllib.request as u; r = u.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT', '8080'), timeout=3); raise SystemExit(0 if r.status == 200 else 1)" || exit 1
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "app:app"]
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 4 --timeout 120 app:app"]
