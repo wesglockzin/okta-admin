@@ -5,15 +5,21 @@ import logging
 import os
 import re as _re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import requests
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 from flask import (
-    Flask, jsonify, redirect, render_template, render_template_string,
-    request, session, url_for,
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    render_template_string,
+    request,
+    session,
+    url_for,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -25,27 +31,45 @@ from shared_http import make_session
 
 load_dotenv(Path(__file__).parent / ".env")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-                    handlers=[logging.StreamHandler(sys.stdout)])
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
 log = logging.getLogger("okta-admin")
 
 ACTION_LOG = Path(
-    os.environ.get("ACTION_LOG_PATH") or Path(__file__).parent / "okta-admin-actions.log"
+    os.environ.get("ACTION_LOG_PATH")
+    or Path(__file__).parent / "okta-admin-actions.log"
 )
 
 _alog = logging.getLogger("okta.admin.actions")
 _alog.setLevel(logging.INFO)
 _alog.propagate = False
 _ah = logging.FileHandler(ACTION_LOG, encoding="utf-8")
-_ah.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+_ah.setFormatter(
+    logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
 _alog.addHandler(_ah)
 _as = logging.StreamHandler(sys.stdout)
-_as.setFormatter(logging.Formatter("ACTION | %(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+_as.setFormatter(
+    logging.Formatter("ACTION | %(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
 _alog.addHandler(_as)
 
-def _log_action(env: str, action: str, label: str, outcome: str, detail: str = "") -> None:
-    _alog.info("%-5s| %-12s| %-40s| %-10s| %s",
-               env.upper()[:5], action[:12], label[:40], outcome[:10], detail)
+
+def _log_action(
+    env: str, action: str, label: str, outcome: str, detail: str = ""
+) -> None:
+    _alog.info(
+        "%-5s| %-12s| %-40s| %-10s| %s",
+        env.upper()[:5],
+        action[:12],
+        label[:40],
+        outcome[:10],
+        detail,
+    )
+
 
 try:
     import keyring as _keyring
@@ -65,7 +89,8 @@ except ConfigError as exc:
     sys.exit(1)
 DEFAULT_ENV = next(iter(OKTA_ENVIRONMENTS))
 ENV_LINKS_HTML = " · ".join(
-    f"<a href='/clear-progress/active?env={name}'>{name}</a>" for name in OKTA_ENVIRONMENTS
+    f"<a href='/clear-progress/active?env={name}'>{name}</a>"
+    for name in OKTA_ENVIRONMENTS
 )
 ACCESS_DENIED_NOTICE = os.environ.get(
     "ACCESS_DENIED_NOTICE",
@@ -73,7 +98,9 @@ ACCESS_DENIED_NOTICE = os.environ.get(
     "to use this app, then click Sign in again.",
 )
 
-AZURE_STORAGE_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", "").strip()
+AZURE_STORAGE_CONNECTION_STRING = os.environ.get(
+    "AZURE_STORAGE_CONNECTION_STRING", ""
+).strip()
 TABLE_UNITS = os.environ.get("TABLE_UNITS", "appauthcounts")
 _units_table = None
 if AZURE_STORAGE_CONNECTION_STRING:
@@ -81,15 +108,20 @@ if AZURE_STORAGE_CONNECTION_STRING:
         from azure.core.pipeline.transport import RequestsTransport
         from azure.data.tables import TableServiceClient
 
-        _verify_tls = os.environ.get("AZURE_TLS_VERIFY", "true").strip().lower() != "false"
+        _verify_tls = (
+            os.environ.get("AZURE_TLS_VERIFY", "true").strip().lower() != "false"
+        )
         if not _verify_tls:
             import urllib3 as _urllib3
 
-            log.warning("AZURE_TLS_VERIFY=false: TLS verification is off for Azure Tables")
+            log.warning(
+                "AZURE_TLS_VERIFY=false: TLS verification is off for Azure Tables"
+            )
             _urllib3.disable_warnings()
         _transport = RequestsTransport(connection_verify=_verify_tls)
         _tbl_svc = TableServiceClient.from_connection_string(
-            AZURE_STORAGE_CONNECTION_STRING, transport=_transport)
+            AZURE_STORAGE_CONNECTION_STRING, transport=_transport
+        )
         _units_table = _tbl_svc.get_table_client(TABLE_UNITS)
         log.info("Auth-count source: enabled (table %s)", TABLE_UNITS)
     except Exception:
@@ -123,6 +155,7 @@ def _get_auth_counts(env: str) -> tuple[dict[str, int], dict[str, int]]:
         log.exception("[%s] auth-count fetch failed", env)
     return by_client, by_label
 
+
 APP_BASE_URL = _auth["base_url"]
 OIDC_SCOPES = "openid email profile"
 OIDC_ENABLED = _auth["enabled"]
@@ -149,7 +182,12 @@ if OIDC_ENABLED:
     )
 
 PUBLIC_PATHS = {
-    "/health", "/login", "/oidc/login", "/oidc/callback", "/logout", "/favicon.ico",
+    "/health",
+    "/login",
+    "/oidc/login",
+    "/oidc/callback",
+    "/logout",
+    "/favicon.ico",
 }
 
 
@@ -194,7 +232,9 @@ def _client(env: str):
     token = get_token(env_cfg["token_var"])
     if not token:
         return None, (jsonify({"error": f"{env_cfg['token_var']} is not set"}), 400)
-    return OktaClient(env_cfg["url"], token, make_session("OktaAdmin", APP_VERSION)), None
+    return OktaClient(
+        env_cfg["url"], token, make_session("OktaAdmin", APP_VERSION)
+    ), None
 
 
 register_howto(app, tool_name="Okta Admin")
@@ -202,10 +242,15 @@ register_howto(app, tool_name="Okta Admin")
 
 @app.route("/")
 def index():
-    resp = app.make_response(render_template("index.html", version=APP_VERSION,
-                                              user=session.get("user"),
-                                              envs=list(OKTA_ENVIRONMENTS),
-                                              default_env=DEFAULT_ENV))
+    resp = app.make_response(
+        render_template(
+            "index.html",
+            version=APP_VERSION,
+            user=session.get("user"),
+            envs=list(OKTA_ENVIRONMENTS),
+            default_env=DEFAULT_ENV,
+        )
+    )
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -269,11 +314,13 @@ def oidc_login():
 @app.get("/oidc/callback")
 def oidc_callback():
     if request.args.get("error"):
-        session["login_error"] = f"{request.args.get('error')}: {request.args.get('error_description', '')}"
+        session["login_error"] = (
+            f"{request.args.get('error')}: {request.args.get('error_description', '')}"
+        )
         return redirect(url_for("login"))
     try:
         token = oauth.okta.authorize_access_token()
-    except Exception:  # noqa: BLE001 - authlib raises several error types; logged below
+    except Exception:
         log.exception("OIDC token exchange failed")
         session["login_error"] = "token exchange failed"
         return redirect(url_for("login"))
@@ -289,7 +336,7 @@ def oidc_callback():
     session["user"] = {
         "email": email,
         "name": claims.get("name"),
-        "login_time": datetime.now(timezone.utc).isoformat(),
+        "login_time": datetime.now(UTC).isoformat(),
     }
     redirect_to = session.pop("post_login_redirect", None) or url_for("index")
     return redirect(redirect_to)
@@ -332,21 +379,23 @@ def api_apps():
                 auth_count = auth_by_label.get(label, 0)
             else:
                 auth_count = 0
-            result.append({
-                "id": aid,
-                "label": label,
-                "sign_on_mode": sign_on_mode,
-                "status": a.get("status", ""),
-                "policy_id": pm.get("policy_id"),
-                "policy_name": pm.get("policy_name"),
-                "routing_rule_id": rm.get("rule_id"),
-                "routing_rule_name": rm.get("rule_name"),
-                "routing_policy_id": rm.get("policy_id"),
-                "dashboard_hidden": bool(hide.get("web")),
-                "note": (a.get("notes") or {}).get("admin") or "",
-                "auth_count": auth_count,
-                "has_everyone": None,
-            })
+            result.append(
+                {
+                    "id": aid,
+                    "label": label,
+                    "sign_on_mode": sign_on_mode,
+                    "status": a.get("status", ""),
+                    "policy_id": pm.get("policy_id"),
+                    "policy_name": pm.get("policy_name"),
+                    "routing_rule_id": rm.get("rule_id"),
+                    "routing_rule_name": rm.get("rule_name"),
+                    "routing_policy_id": rm.get("policy_id"),
+                    "dashboard_hidden": bool(hide.get("web")),
+                    "note": (a.get("notes") or {}).get("admin") or "",
+                    "auth_count": auth_count,
+                    "has_everyone": None,
+                }
+            )
         result.sort(key=lambda x: x["label"].lower())
         return jsonify(result)
     except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
@@ -375,11 +424,13 @@ def api_routing_rules():
         rules = []
         for policy in client.list_idp_routing_policies():
             for rule in client.list_routing_rules(policy["id"]):
-                rules.append({
-                    "id": rule["id"],
-                    "name": rule["name"],
-                    "policy_id": policy["id"],
-                })
+                rules.append(
+                    {
+                        "id": rule["id"],
+                        "name": rule["name"],
+                        "policy_id": policy["id"],
+                    }
+                )
         return jsonify(rules)
     except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
         return jsonify({"error": str(e)}), 502
@@ -498,7 +549,9 @@ def api_note():
         return err
     try:
         client.set_app_note(app_id, note)
-        _log_action(env, "NOTE", app_id, "ok", f'"{note[:60]}"' if note else "(cleared)")
+        _log_action(
+            env, "NOTE", app_id, "ok", f'"{note[:60]}"' if note else "(cleared)"
+        )
         return jsonify({"ok": True, "note": note})
     except Exception as e:  # noqa: BLE001 - route boundary, failure logged and returned
         _log_action(env, "NOTE", app_id, "FAILED", str(e))
@@ -531,6 +584,7 @@ def api_visibility():
 @app.route("/api/check-everyone", methods=["POST"])
 def api_check_everyone():
     import time
+
     data = request.get_json()
     env = data.get("env", DEFAULT_ENV)
     app_ids = data.get("app_ids", [])
@@ -544,8 +598,12 @@ def api_check_everyone():
     except requests.HTTPError as e:
         sc = e.response.status_code if e.response is not None else None
         if sc == 429:
-            return jsonify({"_error": "Rate limited fetching group catalog. Try again shortly.",
-                            "_rate_limited": True})
+            return jsonify(
+                {
+                    "_error": "Rate limited fetching group catalog. Try again shortly.",
+                    "_rate_limited": True,
+                }
+            )
         return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
     except Exception as e:  # noqa: BLE001 - route boundary, error returned as 502
         return jsonify({"error": f"Failed to fetch group catalog: {e}"}), 502
@@ -619,7 +677,9 @@ def _get_group_detail(client, env: str, group_id: str) -> dict:
 
 @app.route("/clear-progress")
 def clear_progress_page():
-    return render_template("clear_progress.html", version=APP_VERSION, default_env=DEFAULT_ENV)
+    return render_template(
+        "clear_progress.html", version=APP_VERSION, default_env=DEFAULT_ENV
+    )
 
 
 @app.route("/clear-progress/active")
@@ -670,11 +730,14 @@ def clear_progress_active():
     app_ids = list(apps.keys())
     removed_ids = list(apps.keys())
     from urllib.parse import urlencode
-    qs = urlencode({
-        "env": env,
-        "app_ids": ",".join(app_ids),
-        "removed": ",".join(removed_ids),
-    })
+
+    qs = urlencode(
+        {
+            "env": env,
+            "app_ids": ",".join(app_ids),
+            "removed": ",".join(removed_ids),
+        }
+    )
     resp = redirect(f"/clear-progress?{qs}")
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
@@ -737,7 +800,8 @@ def api_clear_progress_status():
                 by_scope[sc] = by_scope.get(sc, 0) + 1
             groups_detail = [
                 _get_group_detail(client, env, ag.get("id"))
-                for ag in groups if ag.get("id")
+                for ag in groups
+                if ag.get("id")
             ]
             results[aid] = {
                 "label": meta.get("label"),
@@ -752,11 +816,16 @@ def api_clear_progress_status():
             sc = e.response.status_code if e.response is not None else None
             if sc == 429:
                 any_rate_limited = True
-                results[aid] = {"error": "rate-limited", "rate_limited": True, "http": 429}
+                results[aid] = {
+                    "error": "rate-limited",
+                    "rate_limited": True,
+                    "http": 429,
+                }
             else:
                 results[aid] = {"error": f"HTTP {sc}: {str(e)[:200]}"}
         except Exception as e:  # noqa: BLE001 - per-app failure recorded in results
             results[aid] = {"error": str(e)[:200]}
+
     def _is_done(r: dict) -> bool:
         if r.get("error"):
             return False
@@ -784,8 +853,8 @@ def api_clear_progress_status():
 
 
 def _safe_filename(label: str) -> str:
-    slug = _re.sub(r'[^\w\s-]', '', label).strip()
-    slug = _re.sub(r'[\s]+', '-', slug)
+    slug = _re.sub(r"[^\w\s-]", "", label).strip()
+    slug = _re.sub(r"[\s]+", "-", slug)
     return slug[:60] or "app"
 
 
@@ -905,12 +974,12 @@ def _detect_sp_vendor(cfg: dict) -> str:
 
 _SP_VENDOR_SNIPPETS = {
     "shibboleth": _SP_VENDOR_SHIBBOLETH,
-    "aws":        _SP_VENDOR_AWS,
-    "microsoft":  _SP_VENDOR_MICROSOFT,
-    "google":     _SP_VENDOR_GOOGLE,
+    "aws": _SP_VENDOR_AWS,
+    "microsoft": _SP_VENDOR_MICROSOFT,
+    "google": _SP_VENDOR_GOOGLE,
     "salesforce": _SP_VENDOR_SALESFORCE,
-    "oin":        _SP_VENDOR_OIN,
-    "generic":    _SP_VENDOR_GENERIC,
+    "oin": _SP_VENDOR_OIN,
+    "generic": _SP_VENDOR_GENERIC,
 }
 
 
@@ -962,9 +1031,10 @@ def _render_sp_config_text(cfg: dict, env: str) -> str:
 @app.route("/api/sp-config", methods=["POST"])
 def api_sp_config():
     from flask import send_file
-    data    = request.get_json() or {}
-    env     = data.get("env", DEFAULT_ENV)
-    app_id  = data.get("app_id")
+
+    data = request.get_json() or {}
+    env = data.get("env", DEFAULT_ENV)
+    app_id = data.get("app_id")
     if not app_id:
         return jsonify({"error": "app_id required"}), 400
 
@@ -976,10 +1046,12 @@ def api_sp_config():
         cfg = client.get_saml_config(app_id)
         if cfg.get("status") != "ACTIVE":
             _log_action(env, "SP_CONFIG", app_id, "skipped", "inactive")
-            return jsonify({"error": f"{cfg.get('label', app_id)}: skipped (INACTIVE)"}), 400
+            return jsonify(
+                {"error": f"{cfg.get('label', app_id)}: skipped (INACTIVE)"}
+            ), 400
         text = _render_sp_config_text(cfg, env)
-        slug = _safe_filename(cfg['label'])
-        _log_action(env, "SP_CONFIG", cfg['label'], "ok")
+        slug = _safe_filename(cfg["label"])
+        _log_action(env, "SP_CONFIG", cfg["label"], "ok")
     except Exception as e:  # noqa: BLE001 - route boundary, logged and returned as 500
         log.warning("sp-config failed for %s: %s", app_id, e)
         _log_action(env, "SP_CONFIG", app_id, "FAILED", str(e))
