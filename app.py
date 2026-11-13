@@ -63,7 +63,7 @@ def _log_action(
 ) -> None:
     _alog.info(
         "%-5s| %-12s| %-40s| %-10s| %s",
-        env.upper()[:5],
+        env.upper(),
         action[:12],
         label[:40],
         outcome[:10],

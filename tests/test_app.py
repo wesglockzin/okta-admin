@@ -121,6 +121,14 @@ def test_unknown_env_is_400(client):
     assert resp.status_code == 400
 
 
+def test_clear_progress_active_reads_long_org_name(client, monkeypatch):
+    monkeypatch.setitem(app_module.OKTA_ENVIRONMENTS, "production", {})
+    app_module._log_action("production", "CLEAR_ASSIGNMENTS", "app-123", "ok")
+    resp = client.get("/clear-progress/active?env=production")
+    assert resp.status_code == 302
+    assert "app_ids=app-123" in resp.headers["Location"]
+
+
 def test_missing_token_is_400(client, monkeypatch):
     monkeypatch.delenv("OKTA_ADMIN_ALPHA_API_TOKEN", raising=False)
     monkeypatch.setattr(app_module, "_keyring", None)
