@@ -51,6 +51,9 @@ session key are missing and `AUTH_MODE=none` is not set.
 This tool **writes** to Okta when you click an action. Use a token scoped to what you
 need, and try changes against a non-production org first.
 
+Behind a reverse proxy, the proxy must forward `X-Forwarded-Host` and
+`X-Forwarded-Proto`. The same-site Origin check on writes compares against that host.
+
 ## Known limitations
 - **It writes to Okta.** Every action button changes the org immediately — there is no
   dry-run mode and no undo. The action log records what was done, not how to reverse it.

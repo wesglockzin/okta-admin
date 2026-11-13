@@ -182,7 +182,7 @@ def get_token(var_name: str) -> str:
             val = _keyring.get_password(KEYRING_SERVICE, var_name)
             if val:
                 return val.strip()
-        except Exception:  # keyring backends raise many error types
+        except Exception:  # noqa: BLE001 - keyring backends raise many error types
             log.warning("keyring lookup failed for %s; using environment", var_name)
     return os.environ.get(var_name, "").strip()
 
@@ -273,7 +273,7 @@ def oidc_callback():
         return redirect(url_for("login"))
     try:
         token = oauth.okta.authorize_access_token()
-    except Exception:  # authlib raises several error types; logged below
+    except Exception:  # noqa: BLE001 - authlib raises several error types; logged below
         log.exception("OIDC token exchange failed")
         session["login_error"] = "token exchange failed"
         return redirect(url_for("login"))
@@ -619,7 +619,7 @@ def _get_group_detail(client, env: str, group_id: str) -> dict:
 
 @app.route("/clear-progress")
 def clear_progress_page():
-    return render_template("clear_progress.html", version=APP_VERSION)
+    return render_template("clear_progress.html", version=APP_VERSION, default_env=DEFAULT_ENV)
 
 
 @app.route("/clear-progress/active")
@@ -645,7 +645,6 @@ def clear_progress_active():
             action = parts[2]
             app_id = parts[3]
             outcome = parts[4]
-            detail = parts[5] if len(parts) >= 6 else ""
             if action != "CLEAR_ASSIGN":
                 continue
             if env_col != env:

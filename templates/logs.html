@@ -32,9 +32,7 @@
         .col-detail { color: #8b949e; max-width: 500px; overflow: hidden; text-overflow: ellipsis; }
         .expand-row td { background: #1c2333 !important; padding: 0.5rem 0.75rem 0.75rem 2.5rem; color: #c9d1d9; white-space: pre-wrap; word-break: break-word; font-size: 0.82em; border-bottom: 2px solid #30363d; }
 
-        .env-dev  { color: #79c0ff; }
-        .env-stg  { color: #ffa657; }
-        .env-prod { color: #ff7b72; }
+        .col-env { color: #79c0ff; }
 
         .act-activate    { color: #56d364; }
         .act-deactivate  { color: #ffa657; }
@@ -90,7 +88,7 @@
         {% set detail = parts[5].strip() if parts|length > 5 else '' %}
         <tr data-action="{{ action }}" data-outcome="{{ outcome }}" data-text="{{ line|lower }}" data-detail="{{ detail }}" onclick="toggleExpand(this)">
             <td class="col-time">{{ ts }}</td>
-            <td class="col-env {{ 'env-' + env.lower() }}">{{ env }}</td>
+            <td class="col-env">{{ env }}</td>
             <td class="col-action {{ 'act-' + action.lower().replace('-', '-') }}">{{ action }}</td>
             <td class="col-label" title="{{ label }}">{{ label }}</td>
             <td class="col-outcome {{ 'out-' + outcome.lower() }}">{{ outcome }}</td>

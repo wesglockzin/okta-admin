@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import textwrap
 import time
@@ -7,6 +8,8 @@ import urllib.parse
 import xml.etree.ElementTree as _ET
 
 import requests
+
+log = logging.getLogger(__name__)
 
 APP_SIGN_ON_MODES = {
     "SAML_2_0", "SAML_1_1", "OPENID_CONNECT",
@@ -285,7 +288,8 @@ class OktaClient:
                 continue
             try:
                 g = self.get_group(gid)
-            except Exception:
+            except Exception:  # noqa: BLE001 - one bad group must not stop the scan
+                log.warning("could not read group %s; skipping it", gid, exc_info=True)
                 continue
             name = (g.get("profile") or {}).get("name") or ""
             gtype = g.get("type") or ""

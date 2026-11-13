@@ -12,9 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 OIDC_ENV = {
     "OIDC_ISSUER": "https://idp.example.test/",
     "OIDC_CLIENT_ID": "id",
-    "OIDC_CLIENT_SECRET": "secret",
+    "OIDC_CLIENT_SECRET": "secret",  # pragma: allowlist secret
     "APP_BASE_URL": "https://app.example.test",
-    "FLASK_SECRET_KEY": "key",
+    "FLASK_SECRET_KEY": "key",  # pragma: allowlist secret
     "OIDC_ALLOWED_EMAILS": "A@example.test, b@example.test",
 }
 
@@ -96,6 +96,7 @@ def _import_app(extra):
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
 
 

@@ -48,6 +48,27 @@ def test_index_lists_configured_orgs(client):
     assert 'data-env="dev"' not in html
 
 
+def test_clear_progress_defaults_to_first_configured_org(client):
+    html = client.get("/clear-progress").get_data(as_text=True)
+    assert 'params.get(\'env\') || "alpha"' in html
+    assert "'dev'" not in html
+
+
+def test_main_defaults_are_local(monkeypatch):
+    calls = {}
+    monkeypatch.delenv("HOST", raising=False)
+    monkeypatch.delenv("PORT", raising=False)
+    monkeypatch.setattr(app_module.app, "run", lambda **kw: calls.update(kw))
+    app_module.main()
+    assert calls["host"] == "127.0.0.1"
+    assert calls["port"] == 5002
+    monkeypatch.setenv("HOST", "0.0.0.0")  # noqa: S104 - checking the override
+    monkeypatch.setenv("PORT", "9090")
+    app_module.main()
+    assert calls["host"] == "0.0.0.0"  # noqa: S104
+    assert calls["port"] == 9090
+
+
 def test_api_requires_sign_in_when_gate_on(client, gate_on):
     resp = client.get("/api/apps")
     assert resp.status_code == 401

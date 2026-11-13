@@ -12,11 +12,8 @@
   header .sub { font-size: 0.85em; color: var(--pico-muted-color); }
   .env-badge {
     display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
-    font-size: 0.78em; font-weight: 700; color: #fff;
+    font-size: 0.78em; font-weight: 700; color: #fff; background: #4a5568;
   }
-  .env-dev  { background: #1b6e1b; }
-  .env-stg  { background: #c98a00; }
-  .env-prod { background: #b71c1c; }
 
   .summary {
     margin-bottom: 1rem; padding: 0.7rem 0.9rem;
@@ -126,12 +123,12 @@
 
 <script>
 const params = new URLSearchParams(window.location.search);
-const env = (params.get('env') || 'dev').toLowerCase();
+const env = (params.get('env') || {{ default_env|tojson }}).toLowerCase();
 const appIds = (params.get('app_ids') || '').split(',').map(s => s.trim()).filter(Boolean);
 const started = params.get('started') ? new Date(params.get('started')) : new Date();
 
 document.getElementById('env-badge').textContent = env.toUpperCase();
-document.getElementById('env-badge').className = 'env-badge env-' + env;
+document.getElementById('env-badge').className = 'env-badge';
 
 const removedParamPresent = params.has('removed');
 const removedFromActionParam = new Set(

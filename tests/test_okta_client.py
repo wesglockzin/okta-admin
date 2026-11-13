@@ -150,7 +150,7 @@ def test_remove_app_from_routing_rule():
         {("GET", url): [FakeResponse(body=rule)], ("PUT", url): [FakeResponse()]}
     )
     client.remove_app_from_routing_rule("p1", "r1", "a1")
-    sent = [c for c in session.calls if c[0] == "PUT"][0][2]["json"]
+    sent = next(c for c in session.calls if c[0] == "PUT")[2]["json"]
     assert [r["id"] for r in sent["conditions"]["app"]["include"]] == ["a2"]
 
 
