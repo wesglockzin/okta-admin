@@ -169,7 +169,7 @@ def test_remove_app_from_routing_rule():
 def test_safe_id_rejects_path_tricks():
     assert OktaClient._safe_id("0oa1B2c3") == "0oa1B2c3"
     for bad in ["../x", "a/b", "", "a b", None]:
-        with pytest.raises(ValueError):
+        with pytest.raises(okta_client.InvalidOktaId):
             OktaClient._safe_id(bad)
 
 
