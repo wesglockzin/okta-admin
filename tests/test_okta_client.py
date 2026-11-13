@@ -113,9 +113,11 @@ def test_retry_after_429(monkeypatch):
 def test_catalog_search_http_error_is_logged_and_raised(caplog):
     url = f"{BASE}/api/v1/catalog/apps?q=Example&limit=20"
     client, _ = make({("GET", url): [FakeResponse(status=403)]})
-    with caplog.at_level("ERROR", logger="okta_client"):
-        with pytest.raises(requests.HTTPError) as info:
-            client.search_oin_catalog("Example")
+    with (
+        caplog.at_level("ERROR", logger="okta_client"),
+        pytest.raises(requests.HTTPError) as info,
+    ):
+        client.search_oin_catalog("Example")
     assert info.value.response.status_code == 403
     assert "OIN catalog search failed" in caplog.text
 
